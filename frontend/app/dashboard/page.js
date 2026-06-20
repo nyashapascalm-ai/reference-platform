@@ -119,7 +119,7 @@ function OrgPanel({ me }) {
   const [content, setContent] = useState({});
   const [meta, setMeta] = useState({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
-  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({}); const [draftScore, setDraftScore] = useState(null);
+  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({}); const [draftScore, setDraftScore] = useState(null); const [lastDraft, setLastDraft] = useState(null);
 
   async function aiDraft() {
     setAiMsg('Drafting…'); setErr(false);
@@ -158,7 +158,11 @@ function OrgPanel({ me }) {
   const upc = (k) => (e) => setContent({ ...content, [k]: e.target.value });
 
   async function draft() {
-    setBusy(true); setMsg(''); setErr(false);
+    setMsg(''); setErr(false);
+    if (!meta.worker_id || !/^[0-9a-fA-F-]{36}$/.test(meta.worker_id.trim())) {
+      setErr(true); setMsg('Paste a valid Worker ID first (from the worker\u2019s portal).'); return;
+    }
+    setBusy(true);
     try {
       const body = {
         worker_id: meta.worker_id, template_id: tpl.id,
@@ -166,9 +170,22 @@ function OrgPanel({ me }) {
         referee: meta.ref_email ? { full_name: meta.ref_name, job_title: meta.ref_title, work_email: meta.ref_email } : null,
       };
       const r = await api('/references', { method: 'POST', body });
-      setMsg('Draft created' + (r.referee ? ` · referee domain_verified: ${r.referee.domain_verified}` : ''));
+      setLastDraft({ id: r.reference_id, status: 'draft' });
+      setMsg('Draft created' + (r.referee ? ` · referee domain verified: ${r.referee.domain_verified}` : '') + ' — review, then Publish.');
       load();
     } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
+  }
+  async function publishInline() {
+    setBusy(true); setMsg(''); setErr(false);
+    try { const r = await api(`/references/${lastDraft.id}/publish`, { method: 'POST' });
+      setLastDraft({ id: lastDraft.id, status: 'published', hash: r.content_hash });
+      setMsg('Published \u2713 — the worker can now share it.'); load(); }
+    catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
+  }
+  function newReference() {
+    setLastDraft(null); setContent({}); setNotes(''); setDraftScore(null); setFlags(null);
+    setMeta({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
+    setMsg(''); setAiMsg('');
   }
   async function publish(id) {
     setMsg(''); setErr(false);
@@ -204,11 +221,14 @@ function OrgPanel({ me }) {
       <label>Referee work email (must match your domain)</label>
       <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@barchester.gov.uk" />
       <div className="row">
-        <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
+        {!lastDraft && <button onClick={draft} disabled={busy || !tpl}>Create draft</button>}
+        {lastDraft && lastDraft.status === 'draft' && <button onClick={publishInline} disabled={busy}>Publish</button>}
+        {lastDraft && lastDraft.status === 'published' && <button onClick={newReference}>New reference</button>}
         <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
         <button className="ghost" onClick={analyseDraft} disabled={Object.keys(content).length === 0}>Analyse draft</button>
         {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
       </div>
+      {lastDraft && lastDraft.status === 'published' && <div className="hash" style={{ marginTop: 8 }}>{lastDraft.hash}</div>}
       {draftScore && (
         <div style={{ marginTop: 8 }}>
           <div className="kv">Draft risk score: <b style={{ color: 'var(--text)' }}>{draftScore.risk_score}</b> / 100</div>
@@ -225,21 +245,9 @@ function OrgPanel({ me }) {
       {refs.length === 0 && <p className="muted">None yet.</p>}
       {refs.map((r) => (
         <div className="item" key={r.id}>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <div>
-              <div>{r.worker_name} <span className={'badge' + (r.status === 'published' ? ' pub' : '')}>{r.status}</span></div>
-              <div className="kv">{r.assignment_context || '—'}</div>
-              {r.content_hash && <div className="hash">{r.content_hash}</div>}
-            </div>
-            {r.status !== 'published' && <button onClick={() => publish(r.id)}>Publish</button>}
-            {r.status === 'published' && <button className="ghost" onClick={() => analyse(r.id)}>Analyse with AI</button>}
-          </div>
-          {analysis[r.id] && (
-            <div style={{ marginTop: 8 }}>
-              <div className="kv">Risk score: <b style={{ color: 'var(--text)' }}>{analysis[r.id].risk_score}</b> / 100</div>
-              <div className="kv">{analysis[r.id].summary}</div>
-            </div>
-          )}
+          <div>{r.worker_name} <span className={'badge' + (r.status === 'published' ? ' pub' : '')}>{r.status}</span></div>
+          <div className="kv">{r.assignment_context || '—'}{r.published_at ? ' · ' + new Date(r.published_at).toLocaleString() : ''}</div>
+          {r.content_hash && <div className="hash">{r.content_hash}</div>}
         </div>
       ))}
     </div>
