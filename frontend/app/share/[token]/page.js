@@ -7,10 +7,15 @@ export default function SharePage() {
   const { token } = useParams();
   const [preview, setPreview] = useState(null);
   const [ref, setRef] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', organisation: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // unpinned: simple identify form
+  const [form, setForm] = useState({ name: '', email: '', organisation: '' });
+  // pinned: one-time code flow
+  const [stage, setStage] = useState('email'); // 'email' | 'code'
+  const [info, setInfo] = useState('');
 
   useEffect(() => {
     api(`/share/${token}`, { auth: false })
@@ -19,45 +24,99 @@ export default function SharePage() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  // unpinned reveal
   async function reveal() {
     if (!form.name.trim() || !form.email.trim()) { setError('Please enter your name and work email.'); return; }
-    setSubmitting(true); setError('');
+    setBusy(true); setError('');
     try { const r = await api(`/share/${token}`, { method: 'POST', auth: false, body: form }); setRef(r); }
-    catch (e) { setError(e.message); } finally { setSubmitting(false); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
+  // pinned: request a code
+  async function requestCode() {
+    if (!form.email.trim()) { setError('Enter the email this reference was sent to.'); return; }
+    setBusy(true); setError(''); setInfo('');
+    try {
+      const r = await api(`/share/${token}/request-code`, { method: 'POST', auth: false, body: { email: form.email } });
+      if (r.sent) { setStage('code'); setInfo('We’ve emailed you a 6-digit code. Enter it below (check spam too).'); }
+      else { setError('Email isn’t configured for this link yet — please ask the sender to share another way.'); }
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  // pinned: verify the code
+  async function verifyCode() {
+    if (!form.code || !form.code.trim()) { setError('Enter the code from your email.'); return; }
+    setBusy(true); setError('');
+    try {
+      const r = await api(`/share/${token}/verify`, { method: 'POST', auth: false, body: { email: form.email, code: form.code, name: form.name, organisation: form.organisation } });
+      setRef(r);
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
   if (loading) return <div className="wrap"><p className="muted">Verifying link…</p></div>;
-
-  if (error && !ref) return (
-    <div className="wrap">
-      <h1>Reference unavailable</h1>
-      <p className="msg err">{error}</p>
-      <p className="muted">This link may have expired or been revoked by the worker.</p>
-    </div>
+  if (error && !ref && !preview) return (
+    <div className="wrap"><h1>Reference unavailable</h1><p className="msg err">{error}</p>
+      <p className="muted">This link may have expired or been revoked by the worker.</p></div>
   );
 
-  // Identity gate — shown until the viewer identifies themselves
-  if (!ref) return (
-    <div className="wrap">
-      <h1>Verified reference</h1>
-      <p className="muted">
-        {preview?.worker_name ? `Reference for ${preview.worker_name}` : 'Verified reference'}
-        {preview?.issuing_org ? ` · issued by ${preview.issuing_org}` : ''}
-      </p>
-      <div className="card">
-        <h2>Confirm who’s viewing</h2>
-        <p className="muted">The worker will be able to see that you viewed this reference. Please identify yourself to continue.</p>
-        <label>Your name</label>
-        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <label>Work email</label>
-        <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@employer.com" />
-        <label>Organisation</label>
-        <input value={form.organisation} onChange={(e) => setForm({ ...form, organisation: e.target.value })} />
-        <button onClick={reveal} disabled={submitting}>View reference</button>
-        {error && <div className="msg err">{error}</div>}
+  if (!ref) {
+    const heading = (
+      <>
+        <h1>Verified reference</h1>
+        <p className="muted">
+          {preview?.worker_name ? `Reference for ${preview.worker_name}` : 'Verified reference'}
+          {preview?.issuing_org ? ` · issued by ${preview.issuing_org}` : ''}
+        </p>
+      </>
+    );
+
+    // PINNED: verified-recipient code flow
+    if (preview?.pinned) return (
+      <div className="wrap">
+        {heading}
+        <div className="card">
+          <h2>Verify it’s you</h2>
+          <p className="muted">This reference was sent to {preview.recipient_hint}. Enter that email to receive a one-time code.</p>
+          <label>Email it was sent to</label>
+          <input value={form.email} onChange={set('email')} placeholder={preview.recipient_hint || 'you@employer.com'} disabled={stage === 'code'} />
+          {stage === 'email' && <button onClick={requestCode} disabled={busy}>Email me a code</button>}
+          {stage === 'code' && (
+            <>
+              <label>6-digit code</label>
+              <input value={form.code || ''} onChange={set('code')} placeholder="123456" />
+              <label>Your name</label>
+              <input value={form.name} onChange={set('name')} />
+              <label>Organisation</label>
+              <input value={form.organisation} onChange={set('organisation')} />
+              <div className="row">
+                <button onClick={verifyCode} disabled={busy}>Verify &amp; view</button>
+                <button className="ghost" onClick={requestCode} disabled={busy}>Resend code</button>
+              </div>
+            </>
+          )}
+          {info && <div className="msg">{info}</div>}
+          {error && <div className="msg err">{error}</div>}
+        </div>
       </div>
-    </div>
-  );
+    );
+
+    // UNPINNED: self-declared identify form
+    return (
+      <div className="wrap">
+        {heading}
+        <div className="card">
+          <h2>Confirm who’s viewing</h2>
+          <p className="muted">The worker will be able to see that you viewed this reference. Please identify yourself to continue.</p>
+          <label>Your name</label><input value={form.name} onChange={set('name')} />
+          <label>Work email</label><input value={form.email} onChange={set('email')} placeholder="you@employer.com" />
+          <label>Organisation</label><input value={form.organisation} onChange={set('organisation')} />
+          <button onClick={reveal} disabled={busy}>View reference</button>
+          {error && <div className="msg err">{error}</div>}
+        </div>
+      </div>
+    );
+  }
 
   // Revealed reference
   return (

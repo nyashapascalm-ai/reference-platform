@@ -10,6 +10,7 @@ Identity now comes from the verified Supabase login token, not from headers.
   GET  /share/{token}           public, token-gated read of the source record (audited)
 """
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -18,7 +19,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import ai, db
+from . import ai, db, email
 from .auth import current_user, require_org_actor, require_worker
 from .hashing import content_hash, identity_hash, new_share_token, token_hash
 from .swe import check_registration
@@ -108,11 +109,31 @@ class ViewerIn(BaseModel):
     organisation: str | None = None
 
 
+class RequestCodeIn(BaseModel):
+    email: str
+
+
+class VerifyCodeIn(BaseModel):
+    email: str
+    code: str
+    name: str | None = None
+    organisation: str | None = None
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
 def _now():
     return datetime.now(timezone.utc)
+
+
+def _mask_email(addr: str) -> str:
+    try:
+        local, domain = addr.split("@", 1)
+        shown = local[0] if local else ""
+        return f"{shown}{'•' * max(1, len(local) - 1)}@{domain}"
+    except Exception:
+        return "•••"
 
 
 def _client_ip(request: Request):
@@ -214,7 +235,7 @@ async def reference_activity(reference_id: UUID, user=Depends(current_user)):
         if not allowed:
             raise HTTPException(403, "not permitted to view this activity")
         rows = await c.fetch(
-            "select accessed_by_name, accessed_by_email, viewer_org, accessed_at, action "
+            "select accessed_by_name, accessed_by_email, viewer_org, verified, accessed_at, action "
             "from access_log where reference_id = $1 order by accessed_at desc",
             reference_id,
         )
@@ -465,9 +486,10 @@ async def _validate_grant(c, share_token: str):
 @app.get("/share/{share_token}")
 async def share_preview(share_token: str):
     """Validate the link and name the worker — but reveal nothing and log nothing
-    until the viewer identifies themselves via POST."""
+    until the viewer identifies themselves (POST) or verifies a code."""
     async with db.pool().acquire() as c:
         grant = await _validate_grant(c, share_token)
+        pinned = await c.fetchval("select granted_to_email from access_grants where id = $1", grant["id"])
         ref = await c.fetchrow(
             'select w.full_name as worker_name, o.name as issuing_org '
             'from "references" r join workers w on w.id = r.worker_id '
@@ -477,8 +499,92 @@ async def share_preview(share_token: str):
     return {
         "valid": True,
         "requires_identity": True,
+        "pinned": bool(pinned),
+        "recipient_hint": _mask_email(str(pinned)) if pinned else None,
         "worker_name": ref["worker_name"] if ref else None,
         "issuing_org": ref["issuing_org"] if ref else None,
+    }
+
+
+@app.post("/share/{share_token}/request-code")
+async def share_request_code(share_token: str, body: RequestCodeIn):
+    """Email a one-time code to the recipient inbox so the viewer can prove they control it."""
+    email_in = body.email.strip()
+    async with db.pool().acquire() as c:
+        grant = await _validate_grant(c, share_token)
+        pinned = await c.fetchval("select granted_to_email from access_grants where id = $1", grant["id"])
+        if pinned and email_in.lower() != str(pinned).lower():
+            raise HTTPException(403, "this link was sent to a different email address")
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        await c.execute(
+            "insert into share_codes (grant_id, email, code_hash, expires_at) values ($1, $2, $3, $4)",
+            grant["id"], email_in, token_hash(code), _now() + timedelta(minutes=10),
+        )
+    sent = await email.send_email(
+        email_in,
+        "Your reference access code",
+        f"<p>Your one-time code to view the verified reference is "
+        f"<b style='font-size:20px;letter-spacing:2px'>{code}</b>.</p>"
+        f"<p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>",
+    )
+    return {"sent": bool(sent)}
+
+
+@app.post("/share/{share_token}/verify")
+async def share_verify_code(share_token: str, body: VerifyCodeIn, request: Request):
+    """Check the one-time code, log a verified access, and reveal the reference."""
+    email_in = body.email.strip()
+    async with db.pool().acquire() as c:
+        grant = await _validate_grant(c, share_token)
+        rec = await c.fetchrow(
+            "select id, code_hash, expires_at, used_at from share_codes "
+            "where grant_id = $1 and email = $2 order by created_at desc limit 1",
+            grant["id"], email_in,
+        )
+        if (rec is None or rec["used_at"] is not None or rec["expires_at"] <= _now()
+                or rec["code_hash"] != token_hash(body.code.strip())):
+            raise HTTPException(403, "invalid or expired code")
+        await c.execute("update share_codes set used_at = now() where id = $1", rec["id"])
+        ref = await c.fetchrow(
+            """
+            select r.id, r.content, r.content_hash, r.assignment_context, r.published_at,
+                   r.competency_map, r.risk_score, r.ai_summary,
+                   w.full_name as worker_name, w.registration_body, w.registration_number,
+                   o.name as issuing_org
+            from "references" r
+            join workers w on w.id = r.worker_id
+            join orgs o on o.id = r.issuing_org_id
+            where r.id = $1
+            """,
+            grant["reference_id"],
+        )
+        referee = await c.fetchrow(
+            "select full_name, job_title, email_domain, domain_verified from referees where reference_id = $1",
+            grant["reference_id"],
+        )
+        await c.execute(
+            """
+            insert into access_log
+              (grant_id, reference_id, accessed_by_name, accessed_by_email, viewer_org, verified, action, ip_address)
+            values ($1, $2, $3, $4, $5, true, 'view', $6)
+            """,
+            grant["id"], grant["reference_id"], body.name or email_in, email_in,
+            body.organisation, _client_ip(request),
+        )
+    return {
+        "reference_id": str(ref["id"]),
+        "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}'},
+        "issuing_org": ref["issuing_org"],
+        "assignment_context": ref["assignment_context"],
+        "published_at": ref["published_at"].isoformat() if ref["published_at"] else None,
+        "content": ref["content"],
+        "content_hash": ref["content_hash"],
+        "referee": dict(referee) if referee else None,
+        "ai": {
+            "competency_map": ref["competency_map"],
+            "risk_score": float(ref["risk_score"]) if ref["risk_score"] is not None else None,
+            "summary": ref["ai_summary"],
+        },
     }
 
 

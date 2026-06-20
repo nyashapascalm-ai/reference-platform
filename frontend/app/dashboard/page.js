@@ -260,6 +260,7 @@ function WorkerPanel({ me }) {
   const [recipient, setRecipient] = useState({});
   const [draft, setDraft] = useState({});   // { id: { subject, body } }
   const [activity, setActivity] = useState({});
+  const [pin, setPin] = useState({});
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
 
   const load = useCallback(async () => {
@@ -268,11 +269,15 @@ function WorkerPanel({ me }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function share(id) {
+  async function share(r) {
     setMsg(''); setErr(false);
+    const p = pin[r.id] || {};
+    const body = { reference_id: r.id };
+    if (p.verify && p.email && p.email.trim()) body.granted_to_email = p.email.trim();
     try {
-      const r = await api('/grants', { method: 'POST', body: { reference_id: id } });
-      setLinks({ ...links, [id]: `${window.location.origin}/share/${r.share_token}` });
+      const resp = await api('/grants', { method: 'POST', body });
+      setLinks({ ...links, [r.id]: `${window.location.origin}/share/${resp.share_token}` });
+      if (p.email) setRecipient({ ...recipient, [r.id]: p.email });
     } catch (e) { setErr(true); setMsg(e.message); }
   }
 
@@ -340,12 +345,22 @@ function WorkerPanel({ me }) {
                 </div>
               )}
             </div>
-            {r.status === 'published' && !links[r.id] && <button onClick={() => share(r.id)}>Create share link</button>}
           </div>
+          {r.status === 'published' && !links[r.id] && (
+            <div style={{ marginTop: 8 }}>
+              <label>Recipient email (optional)</label>
+              <input value={pin[r.id]?.email || ''} onChange={(e) => setPin({ ...pin, [r.id]: { ...pin[r.id], email: e.target.value } })} placeholder="hr@employer.com" />
+              <div className="kv" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <input type="checkbox" style={{ width: 'auto' }} checked={pin[r.id]?.verify || false} onChange={(e) => setPin({ ...pin, [r.id]: { ...pin[r.id], verify: e.target.checked } })} />
+                Require recipient to verify their email (one-time code)
+              </div>
+              <button onClick={() => share(r)}>Create share link</button>
+            </div>
+          )}
           {activity[r.id] && (
             <div style={{ marginTop: 6 }}>
               {activity[r.id].map((a, i) => (
-                <div className="kv" key={i}>👁 {a.accessed_by_name || 'Someone'}{a.accessed_by_email ? ` (${a.accessed_by_email})` : ''}{a.viewer_org ? ` · ${a.viewer_org}` : ''} · {new Date(a.accessed_at).toLocaleString()}</div>
+                <div className="kv" key={i}>👁 {a.accessed_by_name || 'Someone'}{a.accessed_by_email ? ` (${a.accessed_by_email})` : ''}{a.viewer_org ? ` · ${a.viewer_org}` : ''}{a.verified ? ' · ✓ verified' : ''} · {new Date(a.accessed_at).toLocaleString()}</div>
               ))}
             </div>
           )}
