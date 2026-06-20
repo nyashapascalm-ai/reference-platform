@@ -270,14 +270,69 @@ function OrgPanel({ me }) {
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
 
       <h2 style={{ marginTop: 24 }}>Issued references</h2>
-      {refs.length === 0 && <p className="muted">None yet.</p>}
-      {refs.map((r) => (
-        <div className="item" key={r.id}>
-          <div>{r.worker_name} <span className={'badge' + (r.status === 'published' ? ' pub' : '')}>{r.status}</span></div>
-          <div className="kv">{r.assignment_context || '—'}{r.published_at ? ' · ' + new Date(r.published_at).toLocaleString() : ''}</div>
-          {r.content_hash && <div className="hash">{r.content_hash}</div>}
-        </div>
-      ))}
+      <p className="muted">Drag a draft into <b>Published</b> to publish it (the tamper-evident hash is generated on drop).</p>
+      <ReferenceBoard refs={refs} onPublish={publish} />
+    </div>
+  );
+}
+
+function ReferenceBoard({ refs, onPublish }) {
+  const [dragId, setDragId] = useState(null);
+  const [overCol, setOverCol] = useState(null);
+
+  const drafts = refs.filter((r) => r.status !== 'published');
+  const published = refs.filter((r) => r.status === 'published' && !(r.opens > 0));
+  const viewed = refs.filter((r) => r.status === 'published' && r.opens > 0);
+
+  async function onDrop(col) {
+    const id = dragId; setOverCol(null); setDragId(null);
+    if (!id) return;
+    const ref = refs.find((r) => r.id === id);
+    if (col === 'published' && ref && ref.status !== 'published') {
+      await onPublish(id);
+    }
+  }
+
+  const Card = (r) => {
+    const isDraft = r.status !== 'published';
+    return (
+      <div
+        key={r.id}
+        className={'refcard' + (isDraft ? ' draggable' : '') + (dragId === r.id ? ' dragging' : '')}
+        draggable={isDraft}
+        onDragStart={isDraft ? (e) => { setDragId(r.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+        onDragEnd={() => { setDragId(null); setOverCol(null); }}
+      >
+        <div className="title">{r.worker_name}</div>
+        <div className="kv">{r.assignment_context || '—'}</div>
+        {r.published_at && <div className="kv">{new Date(r.published_at).toLocaleString()}</div>}
+        {r.opens > 0 && <div className="kv">Opened {r.opens}×{r.last_opened ? ' · ' + new Date(r.last_opened).toLocaleString() : ''}</div>}
+        {r.content_hash && <div className="hash">{r.content_hash.slice(0, 28)}…</div>}
+      </div>
+    );
+  };
+
+  const Column = (key, title, rail, cards, droppable, hint) => (
+    <div
+      className={'column' + (overCol === key ? ' over' : '')}
+      onDragOver={droppable ? (e) => { e.preventDefault(); setOverCol(key); } : undefined}
+      onDragLeave={() => setOverCol((c) => (c === key ? null : c))}
+      onDrop={droppable ? () => onDrop(key) : undefined}
+    >
+      <div className="column-head">{title} <span className="col-count">{cards.length}</span></div>
+      <div className={'col-rail rail-' + rail} />
+      <div className="dropzone">
+        {cards.length === 0 && <div className="col-hint">{hint}</div>}
+        {cards.map(Card)}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="board">
+      {Column('draft', 'Draft', 'draft', drafts, false, 'Drafts you create appear here')}
+      {Column('published', 'Published', 'published', published, true, 'Drop a draft here to publish')}
+      {Column('viewed', 'Viewed', 'viewed', viewed, false, 'Published references that have been opened')}
     </div>
   );
 }
