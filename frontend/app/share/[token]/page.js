@@ -147,6 +147,9 @@ export default function SharePage() {
           <div className="item">
             <div>Referee: {ref.referee.full_name} · {ref.referee.job_title}</div>
             <div className="kv">Domain {ref.referee.domain_verified ? 'verified ✓' : 'unverified'} ({ref.referee.email_domain})</div>
+            {ref.referee.confirmed_at
+              ? <div className="kv" style={{ color: 'var(--accent)' }}>Referee confirmed ✓ {ref.referee.confirmed_name ? `by ${ref.referee.confirmed_name} ` : ''}on {new Date(ref.referee.confirmed_at).toLocaleString()}</div>
+              : <div className="kv">Awaiting referee confirmation</div>}
           </div>
         )}
         <div className="item">

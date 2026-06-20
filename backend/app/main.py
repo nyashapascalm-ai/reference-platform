@@ -120,6 +120,10 @@ class VerifyCodeIn(BaseModel):
     organisation: str | None = None
 
 
+class ConfirmIn(BaseModel):
+    name: str | None = None
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -371,6 +375,11 @@ async def references_publish(reference_id: UUID, actor=Depends(require_org_actor
             )
         except Exception:
             pass
+        # best-effort: ask the named referee to confirm authorship (needs email configured)
+        try:
+            await _send_referee_confirmation(c, reference_id)
+        except Exception:
+            pass
     return {"reference_id": str(reference_id), "status": "published", "content_hash": chash}
 
 
@@ -483,6 +492,90 @@ async def _validate_grant(c, share_token: str):
     return grant
 
 
+async def _send_referee_confirmation(c, reference_id) -> bool:
+    ref = await c.fetchrow(
+        'select w.full_name as worker_name, o.name as issuing_org '
+        'from "references" r join workers w on w.id = r.worker_id '
+        'join orgs o on o.id = r.issuing_org_id where r.id = $1',
+        reference_id,
+    )
+    referee = await c.fetchrow(
+        "select id, full_name, work_email, confirmed_at from referees where reference_id = $1",
+        reference_id,
+    )
+    if ref is None or referee is None or referee["confirmed_at"] is not None:
+        return False
+    raw, thash = new_share_token()
+    await c.execute(
+        "update referees set confirm_token_hash = $2, confirm_sent_at = now() where id = $1",
+        referee["id"], thash,
+    )
+    base = os.environ.get("PUBLIC_APP_URL", "https://reference-platform.vercel.app").rstrip("/")
+    link = f"{base}/confirm/{raw}"
+    html = (
+        f"<p>Hello {referee['full_name']},</p>"
+        f"<p>{ref['issuing_org']} has recorded an employment reference for "
+        f"<b>{ref['worker_name']}</b> and has named you as the referee.</p>"
+        f"<p>Please confirm that you provided this reference:</p>"
+        f"<p><a href='{link}'>Confirm this reference</a></p>"
+        f"<p>If you did not provide this reference, you can ignore this email.</p>"
+    )
+    return await email.send_email(str(referee["work_email"]), "Please confirm an employment reference", html)
+
+
+@app.post("/references/{reference_id}/request-referee-confirmation")
+async def request_referee_confirmation(reference_id: UUID, actor=Depends(require_org_actor)):
+    async with db.pool().acquire() as c:
+        ref = await c.fetchrow('select issuing_org_id from "references" where id = $1', reference_id)
+        if ref is None:
+            raise HTTPException(404, "reference not found")
+        if ref["issuing_org_id"] != actor["org_id"]:
+            raise HTTPException(403, "only the issuing org may request confirmation")
+        sent = await _send_referee_confirmation(c, reference_id)
+    return {"sent": bool(sent)}
+
+
+@app.get("/confirm/{token}")
+async def confirm_preview(token: str):
+    async with db.pool().acquire() as c:
+        referee = await c.fetchrow(
+            "select full_name, reference_id, confirmed_at from referees where confirm_token_hash = $1",
+            token_hash(token),
+        )
+        if referee is None:
+            raise HTTPException(404, "invalid or expired confirmation link")
+        ref = await c.fetchrow(
+            'select w.full_name as worker_name, o.name as issuing_org, r.assignment_context '
+            'from "references" r join workers w on w.id = r.worker_id '
+            'join orgs o on o.id = r.issuing_org_id where r.id = $1',
+            referee["reference_id"],
+        )
+    return {
+        "referee_name": referee["full_name"],
+        "worker_name": ref["worker_name"] if ref else None,
+        "issuing_org": ref["issuing_org"] if ref else None,
+        "assignment_context": ref["assignment_context"] if ref else None,
+        "already_confirmed": referee["confirmed_at"] is not None,
+    }
+
+
+@app.post("/confirm/{token}")
+async def confirm_submit(token: str, body: ConfirmIn, request: Request):
+    async with db.pool().acquire() as c:
+        referee = await c.fetchrow(
+            "select id, confirmed_at from referees where confirm_token_hash = $1",
+            token_hash(token),
+        )
+        if referee is None:
+            raise HTTPException(404, "invalid or expired confirmation link")
+        if referee["confirmed_at"] is None:
+            await c.execute(
+                "update referees set confirmed_at = now(), confirmed_name = $2, ip_address = $3 where id = $1",
+                referee["id"], body.name, _client_ip(request),
+            )
+    return {"confirmed": True}
+
+
 @app.get("/share/{share_token}")
 async def share_preview(share_token: str):
     """Validate the link and name the worker — but reveal nothing and log nothing
@@ -559,7 +652,7 @@ async def share_verify_code(share_token: str, body: VerifyCodeIn, request: Reque
             grant["reference_id"],
         )
         referee = await c.fetchrow(
-            "select full_name, job_title, email_domain, domain_verified from referees where reference_id = $1",
+            "select full_name, job_title, email_domain, domain_verified, confirmed_at, confirmed_name from referees where reference_id = $1",
             grant["reference_id"],
         )
         await c.execute(
@@ -607,7 +700,7 @@ async def share_redeem(share_token: str, viewer: ViewerIn, request: Request):
             grant["reference_id"],
         )
         referee = await c.fetchrow(
-            "select full_name, job_title, email_domain, domain_verified from referees where reference_id = $1",
+            "select full_name, job_title, email_domain, domain_verified, confirmed_at, confirmed_name from referees where reference_id = $1",
             grant["reference_id"],
         )
         await c.execute(
