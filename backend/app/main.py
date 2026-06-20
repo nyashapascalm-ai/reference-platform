@@ -174,20 +174,45 @@ async def my_references(user=Depends(current_user)):
         if worker:
             out["as_worker"] = [dict(r) for r in await c.fetch(
                 'select r.id, r.status, r.assignment_context, r.content_hash, '
-                'o.name as issuing_org, r.published_at '
+                'o.name as issuing_org, r.published_at, '
+                'coalesce(a.opens, 0) as opens, a.last_opened '
                 'from "references" r join orgs o on o.id = r.issuing_org_id '
+                'left join (select reference_id, count(*) as opens, max(accessed_at) as last_opened '
+                '           from access_log group by reference_id) a on a.reference_id = r.id '
                 'where r.worker_id = $1 order by r.created_at desc',
                 worker["id"],
             )]
         if prof and prof["org_id"]:
             out["as_org"] = [dict(r) for r in await c.fetch(
                 'select r.id, r.status, r.assignment_context, r.content_hash, '
-                'w.full_name as worker_name, r.published_at '
+                'w.full_name as worker_name, r.published_at, '
+                'coalesce(a.opens, 0) as opens, a.last_opened '
                 'from "references" r join workers w on w.id = r.worker_id '
+                'left join (select reference_id, count(*) as opens, max(accessed_at) as last_opened '
+                '           from access_log group by reference_id) a on a.reference_id = r.id '
                 'where r.issuing_org_id = $1 order by r.created_at desc',
                 prof["org_id"],
             )]
     return out
+
+
+@app.get("/references/{reference_id}/activity")
+async def reference_activity(reference_id: UUID, user=Depends(current_user)):
+    async with db.pool().acquire() as c:
+        ref = await c.fetchrow('select worker_id, issuing_org_id from "references" where id = $1', reference_id)
+        if ref is None:
+            raise HTTPException(404, "reference not found")
+        prof = await c.fetchrow("select org_id from profiles where id = $1::uuid", user["user_id"])
+        worker = await c.fetchrow("select id from workers where profile_id = $1::uuid", user["user_id"])
+        allowed = (worker and worker["id"] == ref["worker_id"]) or (prof and prof["org_id"] == ref["issuing_org_id"])
+        if not allowed:
+            raise HTTPException(403, "not permitted to view this activity")
+        rows = await c.fetch(
+            "select accessed_by_email, accessed_at, action from access_log "
+            "where reference_id = $1 order by accessed_at desc",
+            reference_id,
+        )
+    return [dict(r) for r in rows]
 
 
 @app.post("/onboarding/org", status_code=201)

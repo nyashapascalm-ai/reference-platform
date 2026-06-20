@@ -259,6 +259,7 @@ function WorkerPanel({ me }) {
   const [links, setLinks] = useState({});
   const [recipient, setRecipient] = useState({});
   const [draft, setDraft] = useState({});   // { id: { subject, body } }
+  const [activity, setActivity] = useState({});
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
 
   const load = useCallback(async () => {
@@ -273,6 +274,11 @@ function WorkerPanel({ me }) {
       const r = await api('/grants', { method: 'POST', body: { reference_id: id } });
       setLinks({ ...links, [id]: `${window.location.origin}/share/${r.share_token}` });
     } catch (e) { setErr(true); setMsg(e.message); }
+  }
+
+  async function loadActivity(id) {
+    try { const a = await api(`/references/${id}/activity`); setActivity({ ...activity, [id]: a }); }
+    catch (e) { setErr(true); setMsg(e.message); }
   }
 
   async function generateEmail(r) {
@@ -325,9 +331,24 @@ function WorkerPanel({ me }) {
             <div>
               <div>{r.issuing_org} <span className={'badge' + (r.status === 'published' ? ' pub' : '')}>{r.status}</span></div>
               <div className="kv">{r.assignment_context || '—'}</div>
+              {r.status === 'published' && (
+                <div className="kv">
+                  {r.opens > 0
+                    ? `Opened ${r.opens} time${r.opens === 1 ? '' : 's'}${r.last_opened ? ' · last ' + new Date(r.last_opened).toLocaleString() : ''}`
+                    : 'Not opened yet'}
+                  {r.opens > 0 && <button className="ghost" style={{ marginTop: 0, marginLeft: 10, padding: '2px 8px' }} onClick={() => loadActivity(r.id)}>View opens</button>}
+                </div>
+              )}
             </div>
             {r.status === 'published' && !links[r.id] && <button onClick={() => share(r.id)}>Create share link</button>}
           </div>
+          {activity[r.id] && (
+            <div style={{ marginTop: 6 }}>
+              {activity[r.id].map((a, i) => (
+                <div className="kv" key={i}>👁 {a.accessed_by_email || 'someone'} · {new Date(a.accessed_at).toLocaleString()}</div>
+              ))}
+            </div>
+          )}
 
           {links[r.id] && (
             <div style={{ marginTop: 8 }}>
