@@ -12,10 +12,11 @@ Stack: **Supabase** (Postgres + auth + RLS) · **FastAPI on Railway** (verificat
 | Step | What | State |
 |------|------|-------|
 | 1 | Core data model — identity spine, custody ledger, consent gate, audit, multi-tenant RLS | **✅ verified · live** |
-| 2 | FastAPI backend — worker verify, reference publish+hash, mint/redeem grant | **✅ verified** |
-| 3 | Next.js — council/agency dashboards, worker portal, £5 share link | next |
-| 4 | AI core — drafting, fairness guard, synthesiser, contradiction, collusion | — |
-| 5 | Social-work vertical module — SWE check, statutory template, Ofsted dashboard | — |
+| 2 | FastAPI backend — worker verify, reference publish+hash, mint/redeem grant | **✅ verified · live** |
+| 3 | Auth — Supabase JWT verification, identity-derived authorization | **✅ verified** |
+| 4 | Next.js — council/agency dashboards, worker portal, £5 share link | next |
+| 5 | AI core — drafting, fairness guard, synthesiser, contradiction, collusion | — |
+| 6 | Social-work vertical module — SWE check, statutory template, Ofsted dashboard | — |
 
 ## Step 1 — what's proven
 
@@ -69,3 +70,22 @@ uvicorn app.main:app --reload
 pip install pgserver fastapi asyncpg httpx uvicorn
 python verify_backend.py   # 17 checks incl. negative cases; already passing
 ```
+
+## Step 3 — auth (verified)
+
+Identity now comes from the **verified Supabase login token**, not headers.
+
+- `app/auth.py` verifies the Supabase JWT (HS256, shared secret) and resolves identity:
+  `current_user` → the logged-in user; `require_org_actor` → org + role; `require_worker` → worker id.
+- `POST /onboarding/org` — a logged-in user creates an org and becomes its `org_admin`.
+- `POST /workers/verify` — the logged-in user registers as a verified worker (identity bound to their account).
+- `POST /references`, `/references/{id}/publish` — require an org member; the org is taken from the token.
+- `POST /grants` — requires a worker; can only share references about themselves.
+- `GET /me` — debug: what identities your token maps to.
+- `GET /share/{token}` — stays public; the share token itself is the authorisation.
+
+Missing/invalid/expired tokens are rejected with 401; wrong-role actions with 403. Verified with real signed tokens in `verify_auth.py` (16 checks).
+
+### New env vars
+- `SUPABASE_JWT_SECRET` — Supabase → Project Settings → API → **JWT Settings → JWT Secret**.
+- `CORS_ORIGINS` — comma-separated allowed browser origins (set to your Vercel URL later; `*` for now).
