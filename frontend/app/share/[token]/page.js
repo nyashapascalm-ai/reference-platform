@@ -5,19 +5,30 @@ import { api } from '../../../lib/api';
 
 export default function SharePage() {
   const { token } = useParams();
+  const [preview, setPreview] = useState(null);
   const [ref, setRef] = useState(null);
+  const [form, setForm] = useState({ name: '', email: '', organisation: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     api(`/share/${token}`, { auth: false })
-      .then(setRef)
+      .then(setPreview)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [token]);
 
+  async function reveal() {
+    if (!form.name.trim() || !form.email.trim()) { setError('Please enter your name and work email.'); return; }
+    setSubmitting(true); setError('');
+    try { const r = await api(`/share/${token}`, { method: 'POST', auth: false, body: form }); setRef(r); }
+    catch (e) { setError(e.message); } finally { setSubmitting(false); }
+  }
+
   if (loading) return <div className="wrap"><p className="muted">Verifying link…</p></div>;
-  if (error) return (
+
+  if (error && !ref) return (
     <div className="wrap">
       <h1>Reference unavailable</h1>
       <p className="msg err">{error}</p>
@@ -25,6 +36,30 @@ export default function SharePage() {
     </div>
   );
 
+  // Identity gate — shown until the viewer identifies themselves
+  if (!ref) return (
+    <div className="wrap">
+      <h1>Verified reference</h1>
+      <p className="muted">
+        {preview?.worker_name ? `Reference for ${preview.worker_name}` : 'Verified reference'}
+        {preview?.issuing_org ? ` · issued by ${preview.issuing_org}` : ''}
+      </p>
+      <div className="card">
+        <h2>Confirm who’s viewing</h2>
+        <p className="muted">The worker will be able to see that you viewed this reference. Please identify yourself to continue.</p>
+        <label>Your name</label>
+        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <label>Work email</label>
+        <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@employer.com" />
+        <label>Organisation</label>
+        <input value={form.organisation} onChange={(e) => setForm({ ...form, organisation: e.target.value })} />
+        <button onClick={reveal} disabled={submitting}>View reference</button>
+        {error && <div className="msg err">{error}</div>}
+      </div>
+    </div>
+  );
+
+  // Revealed reference
   return (
     <div className="wrap">
       <div className="topbar">
@@ -65,12 +100,8 @@ export default function SharePage() {
           <h2>AI assessment</h2>
           {ref.ai.risk_score !== null && <div className="kv">Risk score: <b style={{ color: 'var(--text)' }}>{ref.ai.risk_score}</b> / 100</div>}
           {ref.ai.summary && <div className="item">{ref.ai.summary}</div>}
-          {ref.ai.competency_map && ref.ai.competency_map.PCF && (
-            <div className="kv">PCF: {(ref.ai.competency_map.PCF || []).join(', ')}</div>
-          )}
-          {ref.ai.competency_map && ref.ai.competency_map.KSS && (
-            <div className="kv">KSS: {(ref.ai.competency_map.KSS || []).join(', ')}</div>
-          )}
+          {ref.ai.competency_map && ref.ai.competency_map.PCF && <div className="kv">PCF: {(ref.ai.competency_map.PCF || []).join(', ')}</div>}
+          {ref.ai.competency_map && ref.ai.competency_map.KSS && <div className="kv">KSS: {(ref.ai.competency_map.KSS || []).join(', ')}</div>}
         </div>
       )}
     </div>

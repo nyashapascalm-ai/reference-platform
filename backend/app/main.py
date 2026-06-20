@@ -102,6 +102,12 @@ class ShareMessageIn(BaseModel):
     issuing_org: str | None = None
 
 
+class ViewerIn(BaseModel):
+    name: str
+    email: str
+    organisation: str | None = None
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -208,8 +214,8 @@ async def reference_activity(reference_id: UUID, user=Depends(current_user)):
         if not allowed:
             raise HTTPException(403, "not permitted to view this activity")
         rows = await c.fetch(
-            "select accessed_by_email, accessed_at, action from access_log "
-            "where reference_id = $1 order by accessed_at desc",
+            "select accessed_by_name, accessed_by_email, viewer_org, accessed_at, action "
+            "from access_log where reference_id = $1 order by accessed_at desc",
             reference_id,
         )
     return [dict(r) for r in rows]
@@ -442,24 +448,45 @@ async def references_analyse(reference_id: UUID, actor=Depends(require_org_actor
     return result
 
 
-@app.get("/share/{share_token}")
-async def share_redeem(
-    share_token: str,
-    request: Request,
-    x_email: str | None = Header(default=None),
-):
-    thash = token_hash(share_token)
-    async with db.pool().acquire() as c:
-        grant = await c.fetchrow(
-            "select id, reference_id, status, expires_at from access_grants where token_hash = $1", thash
-        )
-        if grant is None:
-            raise HTTPException(404, "invalid share link")
-        if grant["status"] == "revoked":
-            raise HTTPException(403, "this share link has been revoked")
-        if grant["expires_at"] <= _now():
-            raise HTTPException(403, "this share link has expired")
+async def _validate_grant(c, share_token: str):
+    grant = await c.fetchrow(
+        "select id, reference_id, status, expires_at from access_grants where token_hash = $1",
+        token_hash(share_token),
+    )
+    if grant is None:
+        raise HTTPException(404, "invalid share link")
+    if grant["status"] == "revoked":
+        raise HTTPException(403, "this share link has been revoked")
+    if grant["expires_at"] <= _now():
+        raise HTTPException(403, "this share link has expired")
+    return grant
 
+
+@app.get("/share/{share_token}")
+async def share_preview(share_token: str):
+    """Validate the link and name the worker — but reveal nothing and log nothing
+    until the viewer identifies themselves via POST."""
+    async with db.pool().acquire() as c:
+        grant = await _validate_grant(c, share_token)
+        ref = await c.fetchrow(
+            'select w.full_name as worker_name, o.name as issuing_org '
+            'from "references" r join workers w on w.id = r.worker_id '
+            'join orgs o on o.id = r.issuing_org_id where r.id = $1',
+            grant["reference_id"],
+        )
+    return {
+        "valid": True,
+        "requires_identity": True,
+        "worker_name": ref["worker_name"] if ref else None,
+        "issuing_org": ref["issuing_org"] if ref else None,
+    }
+
+
+@app.post("/share/{share_token}")
+async def share_redeem(share_token: str, viewer: ViewerIn, request: Request):
+    """The viewer identifies themselves; we log who/when, then reveal the reference."""
+    async with db.pool().acquire() as c:
+        grant = await _validate_grant(c, share_token)
         ref = await c.fetchrow(
             """
             select r.id, r.content, r.content_hash, r.assignment_context, r.published_at,
@@ -479,10 +506,12 @@ async def share_redeem(
         )
         await c.execute(
             """
-            insert into access_log (grant_id, reference_id, accessed_by_email, action, ip_address)
-            values ($1, $2, $3, 'view', $4)
+            insert into access_log
+              (grant_id, reference_id, accessed_by_name, accessed_by_email, viewer_org, action, ip_address)
+            values ($1, $2, $3, $4, $5, 'view', $6)
             """,
-            grant["id"], grant["reference_id"], x_email, _client_ip(request),
+            grant["id"], grant["reference_id"], viewer.name, viewer.email,
+            viewer.organisation, _client_ip(request),
         )
     return {
         "reference_id": str(ref["id"]),

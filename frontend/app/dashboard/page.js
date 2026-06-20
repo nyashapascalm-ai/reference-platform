@@ -345,7 +345,7 @@ function WorkerPanel({ me }) {
           {activity[r.id] && (
             <div style={{ marginTop: 6 }}>
               {activity[r.id].map((a, i) => (
-                <div className="kv" key={i}>👁 {a.accessed_by_email || 'someone'} · {new Date(a.accessed_at).toLocaleString()}</div>
+                <div className="kv" key={i}>👁 {a.accessed_by_name || 'Someone'}{a.accessed_by_email ? ` (${a.accessed_by_email})` : ''}{a.viewer_org ? ` · ${a.viewer_org}` : ''} · {new Date(a.accessed_at).toLocaleString()}</div>
               ))}
             </div>
           )}
