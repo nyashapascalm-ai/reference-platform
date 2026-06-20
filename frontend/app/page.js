@@ -47,8 +47,8 @@ export default function Home() {
 
   return (
     <div className="center">
-      <h1>Reference Custody</h1>
-      <p className="muted">Verified, consent-shared employment references.</p>
+      <div className="brand">Refera</div>
+      <p className="muted" style={{ marginTop: 6 }}>References held in trust — verified, tamper-evident, shared only with consent.</p>
       <div className="card" style={{ marginTop: 24 }}>
         <label>I'm joining as</label>
         <div className="row" style={{ gap: 8 }}>
