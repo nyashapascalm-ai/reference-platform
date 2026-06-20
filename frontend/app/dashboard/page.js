@@ -9,6 +9,11 @@ export default function Dashboard() {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [setupRole, setSetupRole] = useState(null);
+
+  useEffect(() => {
+    try { const p = new URLSearchParams(window.location.search).get('setup'); if (p) setSetupRole(p); } catch {}
+  }, []);
 
   const loadMe = useCallback(async () => {
     try { setMe(await api('/me')); }
@@ -38,7 +43,7 @@ export default function Dashboard() {
       </div>
       {error && <div className="msg err">{error}</div>}
 
-      {!me?.org_id && !me?.worker_id && <Onboarding onDone={loadMe} />}
+      {!me?.org_id && !me?.worker_id && <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />}
       {me?.org_id && <OrgPanel me={me} />}
       {me?.org_id && <TeamPanel me={me} />}
       {me?.worker_id && <WorkerPanel me={me} />}
@@ -46,13 +51,21 @@ export default function Dashboard() {
   );
 }
 
-function Onboarding({ onDone }) {
+function Onboarding({ onDone, role, setRole }) {
+  const back = (
+    <button className="ghost" style={{ marginTop: 0 }} onClick={() => setRole(null)}>← Choose a different role</button>
+  );
+  if (role === 'org') return (<><div className="row" style={{ marginBottom: 8 }}>{back}</div><CreateOrg onDone={onDone} /></>);
+  if (role === 'worker') return (<><div className="row" style={{ marginBottom: 8 }}>{back}</div><RegisterWorker onDone={onDone} /></>);
   return (
-    <>
-      <p className="muted">You’re signed in but not set up yet. Choose one:</p>
-      <CreateOrg onDone={onDone} />
-      <RegisterWorker onDone={onDone} />
-    </>
+    <div className="card">
+      <h2>What brings you here?</h2>
+      <p className="muted">Choose how you’ll use Reference Custody. You can change this by signing out.</p>
+      <div className="row">
+        <button onClick={() => setRole('org')}>I issue references (organisation)</button>
+        <button className="ghost" onClick={() => setRole('worker')}>I collect my references (worker)</button>
+      </div>
+    </div>
   );
 }
 

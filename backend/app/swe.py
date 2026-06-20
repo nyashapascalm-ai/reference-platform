@@ -19,7 +19,14 @@ import httpx
 
 _VALID_BODIES = {"swe", "nmc", "gmc", "hcpc", "trn"}
 _SWE_URL = "https://www.socialworkengland.org.uk/umbraco/surface/searchregister/socialworker/{number}"
-_UA = "ReferenceCustodyPlatform/1.0 (registration verification)"
+_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Cache-Control": "no-cache",
+}
 
 
 def _now() -> str:
@@ -72,7 +79,7 @@ async def _check_swe(number: str) -> dict:
     norm = number if number.startswith("SW") else f"SW{number}"
     url = _SWE_URL.format(number=norm)
     try:
-        async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": _UA}) as cx:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers=_HEADERS) as cx:
             r = await cx.get(url)
         if r.status_code != 200:
             return {"status": "pending", "checked_at": _now(),
