@@ -523,6 +523,36 @@ async def _send_referee_confirmation(c, reference_id) -> bool:
     return await email.send_email(str(referee["work_email"]), "Please confirm an employment reference", html)
 
 
+async def _notify_worker_opened(c, reference_id, viewer_name, viewer_email, viewer_org, verified: bool):
+    """Email the worker the first time a given viewer opens their reference."""
+    try:
+        seen = await c.fetchval(
+            "select count(*) from access_log where reference_id = $1 and accessed_by_email = $2",
+            reference_id, viewer_email,
+        )
+        if seen and seen > 1:
+            return  # this viewer has opened before — don't notify again
+        row = await c.fetchrow(
+            'select p.email as worker_email, w.full_name as worker_name '
+            'from "references" r join workers w on w.id = r.worker_id '
+            'join profiles p on p.id = w.profile_id where r.id = $1',
+            reference_id,
+        )
+        if not row or not row["worker_email"]:
+            return
+        who = viewer_name or viewer_email or "someone"
+        org = f" · {viewer_org}" if viewer_org else ""
+        tick = " (identity verified)" if verified else ""
+        html = (
+            f"<p>Hello {row['worker_name']},</p>"
+            f"<p>Your verified reference was just viewed by <b>{who}</b>{org}{tick}.</p>"
+            f"<p>You can see every view in your portal.</p>"
+        )
+        await email.send_email(str(row["worker_email"]), "Your reference was viewed", html)
+    except Exception:
+        pass
+
+
 @app.post("/references/{reference_id}/request-referee-confirmation")
 async def request_referee_confirmation(reference_id: UUID, actor=Depends(require_org_actor)):
     async with db.pool().acquire() as c:
@@ -664,6 +694,7 @@ async def share_verify_code(share_token: str, body: VerifyCodeIn, request: Reque
             grant["id"], grant["reference_id"], body.name or email_in, email_in,
             body.organisation, _client_ip(request),
         )
+        await _notify_worker_opened(c, grant["reference_id"], body.name, email_in, body.organisation, True)
     return {
         "reference_id": str(ref["id"]),
         "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}'},
@@ -712,6 +743,7 @@ async def share_redeem(share_token: str, viewer: ViewerIn, request: Request):
             grant["id"], grant["reference_id"], viewer.name, viewer.email,
             viewer.organisation, _client_ip(request),
         )
+        await _notify_worker_opened(c, grant["reference_id"], viewer.name, viewer.email, viewer.organisation, False)
     return {
         "reference_id": str(ref["id"]),
         "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}'},
