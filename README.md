@@ -11,9 +11,9 @@ Stack: **Supabase** (Postgres + auth + RLS) · **FastAPI on Railway** (verificat
 
 | Step | What | State |
 |------|------|-------|
-| 1 | Core data model — identity spine, custody ledger, consent gate, audit, multi-tenant RLS | **✅ verified** |
-| 2 | FastAPI backend — worker verification, reference publish+hash, mint/redeem grant | next |
-| 3 | Next.js — council/agency dashboards, worker portal, £5 share link | — |
+| 1 | Core data model — identity spine, custody ledger, consent gate, audit, multi-tenant RLS | **✅ verified · live** |
+| 2 | FastAPI backend — worker verify, reference publish+hash, mint/redeem grant | **✅ verified** |
+| 3 | Next.js — council/agency dashboards, worker portal, £5 share link | next |
 | 4 | AI core — drafting, fairness guard, synthesiser, contradiction, collusion | — |
 | 5 | Social-work vertical module — SWE check, statutory template, Ofsted dashboard | — |
 
@@ -41,3 +41,31 @@ The harness stubs the two things Supabase provides in production (the `auth` sch
 supabase db push                # or paste 0001_core_schema.sql into the SQL editor
 ```
 `pgcrypto` and `citext` are available by default on Supabase — no action needed.
+
+## Step 2 — backend (verified)
+
+FastAPI in `backend/`. Endpoints, all enforced server-side:
+
+- `POST /workers/verify` — register + verify a worker (SWE check stubbed in `app/swe.py`).
+- `POST /references` — issuing org drafts a reference; a domain-matching referee is marked `domain_verified`.
+- `POST /references/{id}/publish` — validates the content against the template's required fields, then writes a **server-computed** `content_hash`. A reference cannot publish with missing fields.
+- `POST /grants` — the worker mints the £5 consent link; the raw token is returned **once**, only its sha256 is stored. A worker can only share references about themselves.
+- `GET /share/{token}` — redeems the link: returns the source record, writes an `access_log` row. Revoked or expired links are refused.
+
+Dev auth uses `X-Org-Id` / `X-Worker-Id` headers as a stand-in for the verified Supabase JWT (to be wired in a later step).
+
+### Run locally
+```powershell
+cd backend
+python -m venv .venv ; .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:DATABASE_URL="<your Supabase connection-pooler URI>"
+uvicorn app.main:app --reload
+# open http://127.0.0.1:8000/docs
+```
+
+### Verify (Linux/Mac only — pgserver has no Windows build)
+```bash
+pip install pgserver fastapi asyncpg httpx uvicorn
+python verify_backend.py   # 17 checks incl. negative cases; already passing
+```
