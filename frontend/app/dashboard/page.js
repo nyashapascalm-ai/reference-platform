@@ -258,24 +258,8 @@ function WorkerPanel({ me }) {
   const [refs, setRefs] = useState([]);
   const [links, setLinks] = useState({});
   const [recipient, setRecipient] = useState({});
+  const [draft, setDraft] = useState({});   // { id: { subject, body } }
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
-
-  async function copyLink(id) {
-    try { await navigator.clipboard.writeText(links[id]); setErr(false); setMsg('Link copied to clipboard.'); }
-    catch { setErr(true); setMsg('Copy failed — select the link and copy manually.'); }
-  }
-  async function sendEmail(r) {
-    setMsg('Preparing email…'); setErr(false);
-    let subject = 'Verified employment reference', body = '';
-    try {
-      const m = await api('/ai/share-message', { method: 'POST', body: { issuing_org: r.issuing_org } });
-      subject = m.subject; body = m.body;
-    } catch (e) { /* fall back to a minimal note */ body = 'Hello,\n\nI\u2019d like to share a verified employment reference with you.\n\nKind regards'; }
-    const full = `${body}\n\nView the verified reference:\n${links[r.id]}`;
-    const to = (recipient[r.id] || '').trim();
-    window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(full)}`;
-    setMsg('Opening your email app…');
-  }
 
   const load = useCallback(async () => {
     try { const r = await api('/me/references'); setRefs(r.as_worker || []); }
@@ -287,10 +271,45 @@ function WorkerPanel({ me }) {
     setMsg(''); setErr(false);
     try {
       const r = await api('/grants', { method: 'POST', body: { reference_id: id } });
-      const url = `${window.location.origin}/share/${r.share_token}`;
-      setLinks({ ...links, [id]: url });
+      setLinks({ ...links, [id]: `${window.location.origin}/share/${r.share_token}` });
     } catch (e) { setErr(true); setMsg(e.message); }
   }
+
+  async function generateEmail(r) {
+    setMsg('Drafting email with AI…'); setErr(false);
+    let subject = 'Verified employment reference', body = '';
+    try { const m = await api('/ai/share-message', { method: 'POST', body: { issuing_org: r.issuing_org } });
+      subject = m.subject; body = m.body; }
+    catch (e) { body = 'Hello,\n\nI would like to share a verified employment reference with you.\n\nKind regards'; }
+    const full = `${body}\n\nView the verified reference:\n${links[r.id]}`;
+    setDraft({ ...draft, [r.id]: { subject, body: full } });
+    setMsg('Email drafted — edit if you like, then copy it or open your webmail.');
+  }
+
+  async function copyEmail(id) {
+    const d = draft[id]; const text = `Subject: ${d.subject}\n\n${d.body}`;
+    try { await navigator.clipboard.writeText(text); setErr(false); setMsg('Email copied — paste into your email and send.'); }
+    catch { setErr(true); setMsg('Copy failed — select the text and copy manually.'); }
+  }
+  async function copyLink(id) {
+    try { await navigator.clipboard.writeText(links[id]); setErr(false); setMsg('Link copied.'); }
+    catch { setErr(true); setMsg('Copy failed — select the link manually.'); }
+  }
+  function openWebmail(provider, id) {
+    const d = draft[id];
+    const to = encodeURIComponent((recipient[id] || '').trim());
+    const su = encodeURIComponent(d.subject);
+    const bo = encodeURIComponent(d.body);
+    const urls = {
+      gmail: `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${bo}`,
+      outlook: `https://outlook.live.com/mail/0/deeplink/compose?to=${to}&subject=${su}&body=${bo}`,
+      yahoo: `https://compose.mail.yahoo.com/?to=${to}&subject=${su}&body=${bo}`,
+    };
+    if (provider === 'mailto') { window.location.href = `mailto:${to}?subject=${su}&body=${bo}`; return; }
+    window.open(urls[provider], '_blank');
+  }
+
+  const ta = { width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 };
 
   return (
     <div className="card">
@@ -309,15 +328,35 @@ function WorkerPanel({ me }) {
             </div>
             {r.status === 'published' && !links[r.id] && <button onClick={() => share(r.id)}>Create share link</button>}
           </div>
+
           {links[r.id] && (
             <div style={{ marginTop: 8 }}>
               <div className="share">{links[r.id]}</div>
               <label>Send to (employer email, optional)</label>
               <input value={recipient[r.id] || ''} onChange={(e) => setRecipient({ ...recipient, [r.id]: e.target.value })} placeholder="hr@employer.com" />
-              <div className="row">
-                <button onClick={() => sendEmail(r)}>Send by email</button>
-                <button className="ghost" onClick={() => copyLink(r.id)}>Copy link</button>
-              </div>
+
+              {!draft[r.id] && (
+                <div className="row">
+                  <button onClick={() => generateEmail(r)}>Generate email with AI</button>
+                  <button className="ghost" onClick={() => copyLink(r.id)}>Copy link only</button>
+                </div>
+              )}
+
+              {draft[r.id] && (
+                <div>
+                  <label>Subject</label>
+                  <input value={draft[r.id].subject} onChange={(e) => setDraft({ ...draft, [r.id]: { ...draft[r.id], subject: e.target.value } })} />
+                  <label>Message (editable)</label>
+                  <textarea rows={9} style={ta} value={draft[r.id].body} onChange={(e) => setDraft({ ...draft, [r.id]: { ...draft[r.id], body: e.target.value } })} />
+                  <div className="row">
+                    <button onClick={() => copyEmail(r.id)}>Copy email</button>
+                    <button className="ghost" onClick={() => openWebmail('gmail', r.id)}>Gmail</button>
+                    <button className="ghost" onClick={() => openWebmail('outlook', r.id)}>Outlook</button>
+                    <button className="ghost" onClick={() => openWebmail('yahoo', r.id)}>Yahoo</button>
+                    <button className="ghost" onClick={() => openWebmail('mailto', r.id)}>Email app</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
