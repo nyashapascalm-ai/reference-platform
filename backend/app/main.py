@@ -35,10 +35,11 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Reference Custody Platform API", version="0.3.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
+_wildcard = _origins == ["*"] or not _origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins or ["*"],
-    allow_credentials=True,
+    allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -122,6 +123,11 @@ class VerifyCodeIn(BaseModel):
 
 class ConfirmIn(BaseModel):
     name: str | None = None
+
+
+class InviteIn(BaseModel):
+    email: str
+    role: str = "hiring_manager"
 
 
 # ----------------------------------------------------------------------
@@ -268,6 +274,100 @@ async def onboarding_org(body: OrgCreateIn, user=Depends(current_user)):
                 user["user_id"], org["id"], body.full_name, user["email"] or "unknown@local",
             )
     return {"org_id": str(org["id"]), "role": "org_admin"}
+
+
+async def require_org_admin(actor=Depends(require_org_actor)) -> dict:
+    if actor["role"] != "org_admin":
+        raise HTTPException(403, "this action requires an organisation admin")
+    return actor
+
+
+_INVITE_ROLES = {"hiring_manager", "compliance_lead", "org_admin"}
+
+
+@app.post("/org/invites", status_code=201)
+async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
+    role = body.role if body.role in _INVITE_ROLES else "hiring_manager"
+    email_in = body.email.strip()
+    raw, thash = new_share_token()
+    async with db.pool().acquire() as c:
+        org = await c.fetchrow("select name from orgs where id = $1", actor["org_id"])
+        await c.execute(
+            "insert into org_invites (org_id, email, role, token_hash, invited_by, expires_at) "
+            "values ($1, $2, $3::user_role_t, $4, $5::uuid, $6)",
+            actor["org_id"], email_in, role, thash, actor["user_id"], _now() + timedelta(days=14),
+        )
+    base = os.environ.get("PUBLIC_APP_URL", "https://reference-platform.vercel.app").rstrip("/")
+    link = f"{base}/invite/{raw}"
+    sent = await email.send_email(
+        email_in,
+        f"You've been invited to {org['name']} on Reference Custody",
+        f"<p>You've been invited to join <b>{org['name']}</b> as {role.replace('_', ' ')}.</p>"
+        f"<p>Accept your invite:</p><p><a href='{link}'>{link}</a></p>"
+        f"<p>Sign in (or create an account) with this email address to accept.</p>",
+    )
+    return {"sent": bool(sent), "invite_link": link}
+
+
+@app.get("/org/members")
+async def list_members(actor=Depends(require_org_actor)):
+    async with db.pool().acquire() as c:
+        members = await c.fetch(
+            "select full_name, email, role from profiles where org_id = $1 order by role, full_name",
+            actor["org_id"],
+        )
+        pending = await c.fetch(
+            "select email, role, created_at from org_invites "
+            "where org_id = $1 and accepted_at is null and expires_at > now() order by created_at desc",
+            actor["org_id"],
+        )
+    return {"members": [dict(m) for m in members], "pending_invites": [dict(p) for p in pending]}
+
+
+@app.get("/invite/{token}")
+async def invite_preview(token: str, user=Depends(current_user)):
+    async with db.pool().acquire() as c:
+        inv = await c.fetchrow(
+            "select i.org_id, i.email, i.role, i.accepted_at, i.expires_at, o.name as org_name "
+            "from org_invites i join orgs o on o.id = i.org_id where i.token_hash = $1",
+            token_hash(token),
+        )
+        if inv is None:
+            raise HTTPException(404, "invalid invite link")
+    return {
+        "org_name": inv["org_name"],
+        "role": inv["role"],
+        "invited_email": inv["email"],
+        "email_matches": (user.get("email") or "").lower() == str(inv["email"]).lower(),
+        "already_accepted": inv["accepted_at"] is not None,
+        "expired": inv["expires_at"] <= _now(),
+    }
+
+
+@app.post("/invite/{token}/accept")
+async def accept_invite(token: str, user=Depends(current_user)):
+    async with db.pool().acquire() as c:
+        inv = await c.fetchrow(
+            "select id, org_id, email, role, accepted_at, expires_at from org_invites where token_hash = $1",
+            token_hash(token),
+        )
+        if inv is None:
+            raise HTTPException(404, "invalid invite link")
+        if inv["expires_at"] <= _now():
+            raise HTTPException(403, "this invite has expired")
+        if (user.get("email") or "").lower() != str(inv["email"]).lower():
+            raise HTTPException(403, "this invite was sent to a different email address")
+        async with c.transaction():
+            await c.execute(
+                "insert into profiles (id, org_id, role, full_name, email) "
+                "values ($1::uuid, $2, $3::user_role_t, $4, $5) "
+                "on conflict (id) do update set org_id = excluded.org_id, role = excluded.role",
+                user["user_id"], inv["org_id"], inv["role"],
+                user.get("email") or "member", user.get("email") or "unknown@local",
+            )
+            if inv["accepted_at"] is None:
+                await c.execute("update org_invites set accepted_at = now() where id = $1", inv["id"])
+    return {"org_id": str(inv["org_id"]), "role": inv["role"]}
 
 
 @app.post("/workers/verify", status_code=201)

@@ -40,6 +40,7 @@ export default function Dashboard() {
 
       {!me?.org_id && !me?.worker_id && <Onboarding onDone={loadMe} />}
       {me?.org_id && <OrgPanel me={me} />}
+      {me?.org_id && <TeamPanel me={me} />}
       {me?.worker_id && <WorkerPanel me={me} />}
     </div>
   );
@@ -398,6 +399,65 @@ function WorkerPanel({ me }) {
         </div>
       ))}
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
+    </div>
+  );
+}
+
+
+function TeamPanel({ me }) {
+  const [data, setData] = useState({ members: [], pending_invites: [] });
+  const [form, setForm] = useState({ email: '', role: 'hiring_manager' });
+  const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try { setData(await api('/org/members')); } catch (e) { /* non-admins may still load members */ }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function invite() {
+    if (!form.email.trim()) { setErr(true); setMsg('Enter an email to invite.'); return; }
+    setBusy(true); setMsg(''); setErr(false);
+    try {
+      const r = await api('/org/invites', { method: 'POST', body: form });
+      setMsg(r.sent ? 'Invite emailed.' : 'Invite created — email isn\u2019t configured, so share this link: ' + r.invite_link);
+      setForm({ email: '', role: 'hiring_manager' });
+      load();
+    } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
+  }
+
+  const isAdmin = me.role === 'org_admin';
+  return (
+    <div className="card">
+      <h2>Team</h2>
+      {data.members.map((m, i) => (
+        <div className="item" key={i}>
+          <div>{m.full_name} <span className="badge">{(m.role || '').replace('_', ' ')}</span></div>
+          <div className="kv">{m.email}</div>
+        </div>
+      ))}
+      {isAdmin && (
+        <div style={{ marginTop: 16 }}>
+          <h2>Invite a colleague</h2>
+          <label>Email</label>
+          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="colleague@yourcouncil.gov.uk" />
+          <label>Role</label>
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <option value="hiring_manager">Hiring manager</option>
+            <option value="compliance_lead">Compliance lead</option>
+            <option value="org_admin">Org admin</option>
+          </select>
+          <button onClick={invite} disabled={busy}>Send invite</button>
+          {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
+          {data.pending_invites.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11 }}>Pending invites</div>
+              {data.pending_invites.map((p, i) => (
+                <div className="kv" key={i}>{p.email} · {(p.role || '').replace('_', ' ')}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
