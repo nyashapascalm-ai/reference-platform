@@ -1,4 +1,14 @@
-﻿"""Reference Custody Platform - backend API (Step 3: real auth)."""
+"""Reference Custody Platform — backend API (Step 3: real auth).
+
+Identity now comes from the verified Supabase login token, not from headers.
+
+  POST /onboarding/org          create an org; the caller becomes its admin
+  POST /workers/verify          the logged-in user registers as a verified worker
+  POST /references              org member drafts a reference (org from token)
+  POST /references/{id}/publish org member publishes -> server-side content hash
+  POST /grants                  worker mints the £5 consent link (raw token once)
+  GET  /share/{token}           public, token-gated read of the source record (audited)
+"""
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -33,12 +43,15 @@ app.add_middleware(
 )
 
 
+# ----------------------------------------------------------------------
+# Schemas
+# ----------------------------------------------------------------------
 class OrgCreateIn(BaseModel):
     name: str
     org_type: str
     vertical: str
     email_domain: str | None = None
-    full_name: str
+    full_name: str  # the admin's display name
 
 
 class WorkerVerifyIn(BaseModel):
@@ -70,6 +83,9 @@ class GrantMintIn(BaseModel):
     expires_in_days: int = 14
 
 
+# ----------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------
 def _now():
     return datetime.now(timezone.utc)
 
@@ -84,6 +100,9 @@ def _client_ip(request: Request):
         return None
 
 
+# ----------------------------------------------------------------------
+# Routes
+# ----------------------------------------------------------------------
 @app.get("/health")
 async def health():
     async with db.pool().acquire() as c:
@@ -93,6 +112,7 @@ async def health():
 
 @app.get("/me")
 async def me(actor=Depends(current_user)):
+    """Who am I, per my token — and what identities are attached."""
     async with db.pool().acquire() as c:
         prof = await c.fetchrow(
             "select org_id, role, full_name from profiles where id = $1::uuid", actor["user_id"]
@@ -109,20 +129,67 @@ async def me(actor=Depends(current_user)):
     }
 
 
+@app.get("/templates")
+async def list_templates(vertical: str | None = None):
+    async with db.pool().acquire() as c:
+        if vertical:
+            rows = await c.fetch(
+                "select id, vertical, name, version, field_schema from reference_templates "
+                "where is_active and vertical = $1::vertical_t order by name",
+                vertical,
+            )
+        else:
+            rows = await c.fetch(
+                "select id, vertical, name, version, field_schema from reference_templates "
+                "where is_active order by name"
+            )
+    return [dict(r) for r in rows]
+
+
+@app.get("/me/references")
+async def my_references(user=Depends(current_user)):
+    async with db.pool().acquire() as c:
+        prof = await c.fetchrow("select org_id from profiles where id = $1::uuid", user["user_id"])
+        worker = await c.fetchrow("select id from workers where profile_id = $1::uuid", user["user_id"])
+        out = {"as_worker": [], "as_org": []}
+        if worker:
+            out["as_worker"] = [dict(r) for r in await c.fetch(
+                'select r.id, r.status, r.assignment_context, r.content_hash, '
+                'o.name as issuing_org, r.published_at '
+                'from "references" r join orgs o on o.id = r.issuing_org_id '
+                'where r.worker_id = $1 order by r.created_at desc',
+                worker["id"],
+            )]
+        if prof and prof["org_id"]:
+            out["as_org"] = [dict(r) for r in await c.fetch(
+                'select r.id, r.status, r.assignment_context, r.content_hash, '
+                'w.full_name as worker_name, r.published_at '
+                'from "references" r join workers w on w.id = r.worker_id '
+                'where r.issuing_org_id = $1 order by r.created_at desc',
+                prof["org_id"],
+            )]
+    return out
+
+
 @app.post("/onboarding/org", status_code=201)
 async def onboarding_org(body: OrgCreateIn, user=Depends(current_user)):
     async with db.pool().acquire() as c:
         async with c.transaction():
             org = await c.fetchrow(
-                "insert into orgs (name, org_type, vertical, email_domain) "
-                "values ($1, $2::org_type_t, $3::vertical_t, $4) returning id",
+                """
+                insert into orgs (name, org_type, vertical, email_domain)
+                values ($1, $2::org_type_t, $3::vertical_t, $4)
+                returning id
+                """,
                 body.name, body.org_type, body.vertical, body.email_domain,
             )
             await c.execute(
-                "insert into profiles (id, org_id, role, full_name, email) "
-                "values ($1::uuid, $2, 'org_admin', $3, $4) "
-                "on conflict (id) do update set org_id = excluded.org_id, "
-                "role = 'org_admin', full_name = excluded.full_name",
+                """
+                insert into profiles (id, org_id, role, full_name, email)
+                values ($1::uuid, $2, 'org_admin', $3, $4)
+                on conflict (id) do update
+                  set org_id = excluded.org_id, role = 'org_admin', full_name = excluded.full_name
+                """,
                 user["user_id"], org["id"], body.full_name, user["email"] or "unknown@local",
             )
     return {"org_id": str(org["id"]), "role": "org_admin"}
@@ -136,16 +203,22 @@ async def workers_verify(body: WorkerVerifyIn, user=Depends(current_user)):
         try:
             async with c.transaction():
                 await c.execute(
-                    "insert into profiles (id, org_id, role, full_name, email) "
-                    "values ($1::uuid, null, 'worker', $2, $3) on conflict (id) do nothing",
+                    """
+                    insert into profiles (id, org_id, role, full_name, email)
+                    values ($1::uuid, null, 'worker', $2, $3)
+                    on conflict (id) do nothing
+                    """,
                     user["user_id"], body.full_name, user["email"] or "unknown@local",
                 )
                 row = await c.fetchrow(
-                    "insert into workers (profile_id, full_name, vertical, registration_body, "
-                    "registration_number, registration_status, registration_checked_at, "
-                    "dbs_certificate_number, identity_hash) "
-                    "values ($1::uuid, $2, $3::vertical_t, $4::registration_body_t, $5, "
-                    "$6::verification_status_t, $7, $8, $9) returning id, registration_status",
+                    """
+                    insert into workers
+                      (profile_id, full_name, vertical, registration_body, registration_number,
+                       registration_status, registration_checked_at, dbs_certificate_number, identity_hash)
+                    values ($1::uuid, $2, $3::vertical_t, $4::registration_body_t, $5,
+                            $6::verification_status_t, $7, $8, $9)
+                    returning id, registration_status
+                    """,
                     user["user_id"], body.full_name, body.vertical, body.registration_body,
                     body.registration_number, check["status"], _now(),
                     body.dbs_certificate_number, idhash,
@@ -166,8 +239,11 @@ async def references_create(body: ReferenceCreateIn, actor=Depends(require_org_a
         org = await c.fetchrow("select email_domain from orgs where id = $1", org_id)
         async with c.transaction():
             ref = await c.fetchrow(
-                'insert into "references" (worker_id, issuing_org_id, template_id, '
-                "assignment_context, content) values ($1, $2, $3, $4, $5) returning id, status",
+                """
+                insert into "references" (worker_id, issuing_org_id, template_id, assignment_context, content)
+                values ($1, $2, $3, $4, $5)
+                returning id, status
+                """,
                 body.worker_id, org_id, body.template_id, body.assignment_context, body.content,
             )
             referee_out = None
@@ -175,9 +251,11 @@ async def references_create(body: ReferenceCreateIn, actor=Depends(require_org_a
                 domain = body.referee.work_email.split("@")[-1].lower()
                 verified = bool(org["email_domain"]) and domain == str(org["email_domain"]).lower()
                 await c.execute(
-                    "insert into referees (reference_id, full_name, job_title, work_email, "
-                    "email_domain, domain_verified, auth_method) "
-                    "values ($1, $2, $3, $4, $5, $6, 'email_link')",
+                    """
+                    insert into referees
+                      (reference_id, full_name, job_title, work_email, email_domain, domain_verified, auth_method)
+                    values ($1, $2, $3, $4, $5, $6, 'email_link')
+                    """,
                     ref["id"], body.referee.full_name, body.referee.job_title,
                     body.referee.work_email, domain, verified,
                 )
@@ -190,8 +268,8 @@ async def references_publish(reference_id: UUID, actor=Depends(require_org_actor
     org_id = actor["org_id"]
     async with db.pool().acquire() as c:
         ref = await c.fetchrow(
-            'select worker_id, issuing_org_id, template_id, content, status '
-            'from "references" where id = $1', reference_id,
+            'select worker_id, issuing_org_id, template_id, content, status from "references" where id = $1',
+            reference_id,
         )
         if ref is None:
             raise HTTPException(404, "reference not found")
@@ -199,12 +277,14 @@ async def references_publish(reference_id: UUID, actor=Depends(require_org_actor
             raise HTTPException(403, "only the issuing org may publish this reference")
         if ref["status"] == "published":
             raise HTTPException(409, "reference already published")
+
         tmpl = await c.fetchrow("select field_schema from reference_templates where id = $1", ref["template_id"])
         required = (tmpl["field_schema"] or {}).get("required", []) if tmpl else []
         content = ref["content"] or {}
         missing = [f for f in required if not content.get(f)]
         if missing:
             raise HTTPException(422, {"error": "content missing required fields", "missing": missing})
+
         chash = content_hash(str(ref["worker_id"]), str(org_id), content)
         await c.execute(
             "update \"references\" set status='published', content_hash=$2, published_at=$3 where id=$1",
@@ -224,18 +304,27 @@ async def grants_mint(body: GrantMintIn, worker=Depends(require_worker)):
             raise HTTPException(403, "a worker may only share references about themselves")
         if ref["status"] != "published":
             raise HTTPException(409, "only a published reference can be shared")
+
         raw, thash = new_share_token()
         expires = _now() + timedelta(days=max(1, body.expires_in_days))
         grant = await c.fetchrow(
-            "insert into access_grants (worker_id, reference_id, token_hash, granted_to_email, "
-            "granted_to_org_id, expires_at) values ($1, $2, $3, $4, $5, $6) returning id, expires_at",
+            """
+            insert into access_grants
+              (worker_id, reference_id, token_hash, granted_to_email, granted_to_org_id, expires_at)
+            values ($1, $2, $3, $4, $5, $6)
+            returning id, expires_at
+            """,
             worker_id, body.reference_id, thash, body.granted_to_email, body.granted_to_org_id, expires,
         )
     return {"grant_id": str(grant["id"]), "share_token": raw, "expires_at": grant["expires_at"].isoformat()}
 
 
 @app.get("/share/{share_token}")
-async def share_redeem(share_token: str, request: Request, x_email: str | None = Header(default=None)):
+async def share_redeem(
+    share_token: str,
+    request: Request,
+    x_email: str | None = Header(default=None),
+):
     thash = token_hash(share_token)
     async with db.pool().acquire() as c:
         grant = await c.fetchrow(
@@ -247,12 +336,18 @@ async def share_redeem(share_token: str, request: Request, x_email: str | None =
             raise HTTPException(403, "this share link has been revoked")
         if grant["expires_at"] <= _now():
             raise HTTPException(403, "this share link has expired")
+
         ref = await c.fetchrow(
-            'select r.id, r.content, r.content_hash, r.assignment_context, r.published_at, '
-            'r.competency_map, r.risk_score, r.ai_summary, w.full_name as worker_name, '
-            'w.registration_body, w.registration_number, o.name as issuing_org '
-            'from "references" r join workers w on w.id = r.worker_id '
-            'join orgs o on o.id = r.issuing_org_id where r.id = $1',
+            """
+            select r.id, r.content, r.content_hash, r.assignment_context, r.published_at,
+                   r.competency_map, r.risk_score, r.ai_summary,
+                   w.full_name as worker_name, w.registration_body, w.registration_number,
+                   o.name as issuing_org
+            from "references" r
+            join workers w on w.id = r.worker_id
+            join orgs o on o.id = r.issuing_org_id
+            where r.id = $1
+            """,
             grant["reference_id"],
         )
         referee = await c.fetchrow(
@@ -260,8 +355,10 @@ async def share_redeem(share_token: str, request: Request, x_email: str | None =
             grant["reference_id"],
         )
         await c.execute(
-            "insert into access_log (grant_id, reference_id, accessed_by_email, action, ip_address) "
-            "values ($1, $2, $3, 'view', $4)",
+            """
+            insert into access_log (grant_id, reference_id, accessed_by_email, action, ip_address)
+            values ($1, $2, $3, 'view', $4)
+            """,
             grant["id"], grant["reference_id"], x_email, _client_ip(request),
         )
     return {
@@ -273,5 +370,9 @@ async def share_redeem(share_token: str, request: Request, x_email: str | None =
         "content": ref["content"],
         "content_hash": ref["content_hash"],
         "referee": dict(referee) if referee else None,
-        "ai": {"competency_map": ref["competency_map"], "risk_score": float(ref["risk_score"]) if ref["risk_score"] is not None else None, "summary": ref["ai_summary"]},
+        "ai": {
+            "competency_map": ref["competency_map"],
+            "risk_score": float(ref["risk_score"]) if ref["risk_score"] is not None else None,
+            "summary": ref["ai_summary"],
+        },
     }

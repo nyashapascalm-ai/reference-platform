@@ -1,4 +1,13 @@
-﻿"""Authentication: verify the Supabase login token and resolve identity."""
+"""Authentication: verify the Supabase login token and resolve identity.
+
+The frontend logs a user in via Supabase, which issues a signed JWT (HS256, signed
+with the project's JWT secret). The backend verifies that token on each request and
+derives WHO is acting from it — never from a client-supplied header.
+
+  current_user      -> the logged-in Supabase user (id + email)
+  require_org_actor -> that user resolved to an org membership (org_id + role)
+  require_worker    -> that user resolved to a verified worker identity
+"""
 import os
 from uuid import UUID
 
