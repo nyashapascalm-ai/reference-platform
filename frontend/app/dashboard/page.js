@@ -119,6 +119,25 @@ function OrgPanel({ me }) {
   const [content, setContent] = useState({});
   const [meta, setMeta] = useState({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
+  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({});
+
+  async function aiDraft() {
+    setAiMsg('Drafting…'); setErr(false);
+    try { const r = await api('/ai/draft', { method: 'POST', body: { notes, template_id: tpl.id } }); setContent(r.content); setAiMsg('AI draft inserted — review before publishing.'); }
+    catch (e) { setErr(true); setAiMsg(e.message); }
+  }
+  async function aiCheck() {
+    setAiMsg('Checking…'); setErr(false); setFlags(null);
+    try { const r = await api('/ai/check', { method: 'POST', body: { content } });
+      setFlags(r); setAiMsg(r.ok ? 'No fairness or defamation issues found.' : `${r.flags.length} issue(s) flagged.`); }
+    catch (e) { setErr(true); setAiMsg(e.message); }
+  }
+  function applyRewrite() { if (flags?.rewritten) { setContent({ ...content, ...flags.rewritten }); setFlags(null); setAiMsg('Rewrite applied.'); } }
+  async function analyse(id) {
+    setAiMsg('Analysing…'); setErr(false);
+    try { const r = await api(`/references/${id}/analyse`, { method: 'POST' }); setAnalysis({ ...analysis, [id]: r }); setAiMsg(''); }
+    catch (e) { setErr(true); setAiMsg(e.message); }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -162,6 +181,11 @@ function OrgPanel({ me }) {
       </select>
       <label>Worker ID (from the worker’s portal)</label>
       <input value={meta.worker_id} onChange={up('worker_id')} placeholder="paste worker_id" />
+      <label>Draft with AI (paste rough notes)</label>
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+        style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 }}
+        placeholder="e.g. Sam worked here 2022-24 as senior practitioner, strong on assessments, no conduct issues" />
+      <button className="ghost" onClick={aiDraft} disabled={!tpl || !notes}>Draft with AI</button>
       <label>Assignment context</label>
       <input value={meta.assignment_context} onChange={up('assignment_context')} placeholder="Children & Families team" />
       {required.map((field) => (
@@ -174,7 +198,15 @@ function OrgPanel({ me }) {
       <label>Referee job title</label><input value={meta.ref_title} onChange={up('ref_title')} />
       <label>Referee work email (must match your domain)</label>
       <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@barchester.gov.uk" />
-      <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
+      <div className="row">
+        <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
+        <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
+        {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
+      </div>
+      {aiMsg && <div className={'msg' + (err ? ' err' : '')}>{aiMsg}</div>}
+      {flags && flags.flags && flags.flags.map((fl, i) => (
+        <div className="kv" key={i}>⚠ {fl.field}: {fl.issue} <span className="badge">{fl.severity}</span></div>
+      ))}
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
 
       <h2 style={{ marginTop: 24 }}>Issued references</h2>
@@ -188,7 +220,14 @@ function OrgPanel({ me }) {
               {r.content_hash && <div className="hash">{r.content_hash}</div>}
             </div>
             {r.status !== 'published' && <button onClick={() => publish(r.id)}>Publish</button>}
+            {r.status === 'published' && <button className="ghost" onClick={() => analyse(r.id)}>Analyse with AI</button>}
           </div>
+          {analysis[r.id] && (
+            <div style={{ marginTop: 8 }}>
+              <div className="kv">Risk score: <b style={{ color: 'var(--text)' }}>{analysis[r.id].risk_score}</b> / 100</div>
+              <div className="kv">{analysis[r.id].summary}</div>
+            </div>
+          )}
         </div>
       ))}
     </div>

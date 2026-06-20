@@ -1,4 +1,11 @@
-﻿"""Authentication: verify the Supabase login token and resolve identity."""
+"""Authentication: verify the Supabase login token and resolve identity.
+
+Supports both Supabase token styles:
+  - HS256  : legacy shared JWT secret (SUPABASE_JWT_SECRET)
+  - ES256/RS256 : new asymmetric signing keys, verified via the project's JWKS
+                  (SUPABASE_URL -> /auth/v1/.well-known/jwks.json)
+The token header's `alg` selects the path, so either works with no config change.
+"""
 import os
 from uuid import UUID
 

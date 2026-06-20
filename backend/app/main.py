@@ -18,7 +18,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import db
+from . import ai, db
 from .auth import current_user, require_org_actor, require_worker
 from .hashing import content_hash, identity_hash, new_share_token, token_hash
 from .swe import check_registration
@@ -81,6 +81,15 @@ class GrantMintIn(BaseModel):
     granted_to_email: str | None = None
     granted_to_org_id: UUID | None = None
     expires_in_days: int = 14
+
+
+class AiDraftIn(BaseModel):
+    notes: str
+    template_id: UUID
+
+
+class AiCheckIn(BaseModel):
+    content: dict
 
 
 # ----------------------------------------------------------------------
@@ -317,6 +326,50 @@ async def grants_mint(body: GrantMintIn, worker=Depends(require_worker)):
             worker_id, body.reference_id, thash, body.granted_to_email, body.granted_to_org_id, expires,
         )
     return {"grant_id": str(grant["id"]), "share_token": raw, "expires_at": grant["expires_at"].isoformat()}
+
+
+@app.post("/ai/draft")
+async def ai_draft(body: AiDraftIn, actor=Depends(require_org_actor)):
+    async with db.pool().acquire() as c:
+        tmpl = await c.fetchrow("select field_schema from reference_templates where id = $1", body.template_id)
+    if tmpl is None:
+        raise HTTPException(404, "template not found")
+    required = (tmpl["field_schema"] or {}).get("required", [])
+    try:
+        content = await ai.draft_reference(body.notes, required)
+    except Exception as e:
+        raise HTTPException(502, f"AI drafting failed: {e}")
+    return {"content": content}
+
+
+@app.post("/ai/check")
+async def ai_check(body: AiCheckIn, actor=Depends(require_org_actor)):
+    try:
+        return await ai.check_reference(body.content)
+    except Exception as e:
+        raise HTTPException(502, f"AI check failed: {e}")
+
+
+@app.post("/references/{reference_id}/analyse")
+async def references_analyse(reference_id: UUID, actor=Depends(require_org_actor)):
+    async with db.pool().acquire() as c:
+        ref = await c.fetchrow(
+            'select issuing_org_id, content, assignment_context from "references" where id = $1',
+            reference_id,
+        )
+        if ref is None:
+            raise HTTPException(404, "reference not found")
+        if ref["issuing_org_id"] != actor["org_id"]:
+            raise HTTPException(403, "only the issuing org may analyse this reference")
+        try:
+            result = await ai.synthesise(ref["content"] or {}, ref["assignment_context"])
+        except Exception as e:
+            raise HTTPException(502, f"AI analysis failed: {e}")
+        await c.execute(
+            'update "references" set competency_map = $2, risk_score = $3, ai_summary = $4 where id = $1',
+            reference_id, result["competency_map"], result["risk_score"], result["summary"],
+        )
+    return result
 
 
 @app.get("/share/{share_token}")
