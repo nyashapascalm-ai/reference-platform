@@ -110,3 +110,20 @@ async def synthesise(content: dict, assignment_context: str | None = None) -> di
         "risk_score": score,
         "summary": str(obj.get("summary", "")),
     }
+
+
+async def share_message(worker_name: str, issuing_org: str) -> dict:
+    """A short, professional covering note the worker can email with their reference link."""
+    system = (
+        "Write a brief, professional covering email from a job candidate sharing a verified "
+        "employment reference with a prospective employer. Courteous, 3-4 sentences. Do NOT "
+        "include the link (it is appended separately) and do not invent details. "
+        'Return STRICT JSON only: {"subject": str, "body": str}. No markdown.'
+    )
+    user = f"Candidate: {worker_name}. Reference issued by: {issuing_org}."
+    data = await _complete(system, user, max_tokens=400)
+    obj = _extract_json(data)
+    return {
+        "subject": str(obj.get("subject") or "Verified employment reference"),
+        "body": str(obj.get("body") or ""),
+    }

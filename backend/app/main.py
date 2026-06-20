@@ -97,6 +97,11 @@ class AiAnalyseIn(BaseModel):
     assignment_context: str | None = None
 
 
+class ShareMessageIn(BaseModel):
+    worker_name: str | None = None
+    issuing_org: str | None = None
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -372,6 +377,22 @@ async def ai_analyse(body: AiAnalyseIn, actor=Depends(require_org_actor)):
         return await ai.synthesise(body.content, body.assignment_context)
     except Exception as e:
         raise HTTPException(502, f"AI analysis failed: {e}")
+
+
+@app.post("/ai/share-message")
+async def ai_share_message(body: ShareMessageIn, user=Depends(current_user)):
+    """A covering email the worker can send with their share link. Never fails —
+    falls back to a clean template if the AI is unavailable."""
+    try:
+        return await ai.share_message(body.worker_name or "the candidate",
+                                      body.issuing_org or "a previous employer")
+    except Exception:
+        return {
+            "subject": "Verified employment reference",
+            "body": ("Hello,\n\nI'd like to share a verified employment reference with you. "
+                     "It was issued directly by my previous employer and can be viewed securely "
+                     "via the link below.\n\nKind regards"),
+        }
 
 
 @app.post("/references/{reference_id}/analyse")
