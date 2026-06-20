@@ -92,6 +92,11 @@ class AiCheckIn(BaseModel):
     content: dict
 
 
+class AiAnalyseIn(BaseModel):
+    content: dict
+    assignment_context: str | None = None
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -299,6 +304,16 @@ async def references_publish(reference_id: UUID, actor=Depends(require_org_actor
             "update \"references\" set status='published', content_hash=$2, published_at=$3 where id=$1",
             reference_id, chash, _now(),
         )
+        # best-effort: attach an AI assessment so the share page can show it.
+        # Never block publishing if the AI is unavailable (no key / no credit / error).
+        try:
+            result = await ai.synthesise(content, None)
+            await c.execute(
+                'update "references" set competency_map=$2, risk_score=$3, ai_summary=$4 where id=$1',
+                reference_id, result["competency_map"], result["risk_score"], result["summary"],
+            )
+        except Exception:
+            pass
     return {"reference_id": str(reference_id), "status": "published", "content_hash": chash}
 
 
@@ -348,6 +363,15 @@ async def ai_check(body: AiCheckIn, actor=Depends(require_org_actor)):
         return await ai.check_reference(body.content)
     except Exception as e:
         raise HTTPException(502, f"AI check failed: {e}")
+
+
+@app.post("/ai/analyse")
+async def ai_analyse(body: AiAnalyseIn, actor=Depends(require_org_actor)):
+    """Analyse live draft content without saving — lets the issuer iterate pre-publish."""
+    try:
+        return await ai.synthesise(body.content, body.assignment_context)
+    except Exception as e:
+        raise HTTPException(502, f"AI analysis failed: {e}")
 
 
 @app.post("/references/{reference_id}/analyse")

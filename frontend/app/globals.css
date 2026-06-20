@@ -33,3 +33,14 @@ button:disabled{opacity:.5;cursor:default}
 .kv{font-size:13px;color:var(--muted)}
 .share{background:var(--ink);border:1px dashed var(--accent-dim);border-radius:9px;padding:10px;
   font-family:ui-monospace,monospace;font-size:12px;color:var(--accent);word-break:break-all;margin-top:8px}
+
+@media print{
+  body{background:#fff;color:#111}
+  .noprint{display:none !important}
+  .wrap{max-width:none;padding:0}
+  .card{background:#fff;border:1px solid #ccc;break-inside:avoid}
+  h1,h2{color:#111}
+  .muted,.kv{color:#333}
+  .hash{color:#111}
+  .badge{color:#333;border-color:#999}
+}

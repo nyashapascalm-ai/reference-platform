@@ -119,7 +119,7 @@ function OrgPanel({ me }) {
   const [content, setContent] = useState({});
   const [meta, setMeta] = useState({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
-  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({});
+  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({}); const [draftScore, setDraftScore] = useState(null);
 
   async function aiDraft() {
     setAiMsg('Drafting…'); setErr(false);
@@ -133,6 +133,11 @@ function OrgPanel({ me }) {
     catch (e) { setErr(true); setAiMsg(e.message); }
   }
   function applyRewrite() { if (flags?.rewritten) { setContent({ ...content, ...flags.rewritten }); setFlags(null); setAiMsg('Rewrite applied.'); } }
+  async function analyseDraft() {
+    setAiMsg('Analysing draft…'); setErr(false); setDraftScore(null);
+    try { const r = await api('/ai/analyse', { method: 'POST', body: { content, assignment_context: meta.assignment_context } }); setDraftScore(r); setAiMsg(''); }
+    catch (e) { setErr(true); setAiMsg(e.message); }
+  }
   async function analyse(id) {
     setAiMsg('Analysing…'); setErr(false);
     try { const r = await api(`/references/${id}/analyse`, { method: 'POST' }); setAnalysis({ ...analysis, [id]: r }); setAiMsg(''); }
@@ -201,8 +206,15 @@ function OrgPanel({ me }) {
       <div className="row">
         <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
         <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
+        <button className="ghost" onClick={analyseDraft} disabled={Object.keys(content).length === 0}>Analyse draft</button>
         {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
       </div>
+      {draftScore && (
+        <div style={{ marginTop: 8 }}>
+          <div className="kv">Draft risk score: <b style={{ color: 'var(--text)' }}>{draftScore.risk_score}</b> / 100</div>
+          <div className="kv">{draftScore.summary}</div>
+        </div>
+      )}
       {aiMsg && <div className={'msg' + (err ? ' err' : '')}>{aiMsg}</div>}
       {flags && flags.flags && flags.flags.map((fl, i) => (
         <div className="kv" key={i}>⚠ {fl.field}: {fl.issue} <span className="badge">{fl.severity}</span></div>
