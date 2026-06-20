@@ -131,6 +131,12 @@ export default function SharePage() {
       <div className="card">
         <h2>{ref.worker.name}</h2>
         <div className="kv">Registration: {ref.worker.registration}</div>
+        <div className="kv">Register check: {
+          ref.worker.registration_status === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span>
+          : ref.worker.registration_status === 'failed' ? 'Not found / unverified'
+          : ref.worker.registration_status === 'expired' ? 'Registration expired'
+          : 'Verification pending'
+        }</div>
         <div className="kv">Issued by: {ref.issuing_org}</div>
         <div className="kv">Context: {ref.assignment_context || '—'}</div>
         {ref.published_at && <div className="kv">Published: {new Date(ref.published_at).toLocaleString()}</div>}

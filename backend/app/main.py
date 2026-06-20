@@ -404,7 +404,16 @@ async def workers_verify(body: WorkerVerifyIn, user=Depends(current_user)):
             if "workers_profile_id_key" in str(e):
                 raise HTTPException(409, "this user already has a worker identity")
             raise
-    return {"worker_id": str(row["id"]), "registration_status": row["registration_status"]}
+    return {
+        "worker_id": str(row["id"]),
+        "registration_status": row["registration_status"],
+        "register": {
+            "register_status": check.get("register_status"),
+            "registered_name": check.get("registered_name"),
+            "registered_until": check.get("registered_until"),
+            "detail": check.get("detail"),
+        },
+    }
 
 
 @app.post("/references", status_code=201)
@@ -773,6 +782,7 @@ async def share_verify_code(share_token: str, body: VerifyCodeIn, request: Reque
             select r.id, r.content, r.content_hash, r.assignment_context, r.published_at,
                    r.competency_map, r.risk_score, r.ai_summary,
                    w.full_name as worker_name, w.registration_body, w.registration_number,
+                   w.registration_status,
                    o.name as issuing_org
             from "references" r
             join workers w on w.id = r.worker_id
@@ -797,7 +807,7 @@ async def share_verify_code(share_token: str, body: VerifyCodeIn, request: Reque
         await _notify_worker_opened(c, grant["reference_id"], body.name, email_in, body.organisation, True)
     return {
         "reference_id": str(ref["id"]),
-        "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}'},
+        "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}', "registration_status": ref["registration_status"]},
         "issuing_org": ref["issuing_org"],
         "assignment_context": ref["assignment_context"],
         "published_at": ref["published_at"].isoformat() if ref["published_at"] else None,
@@ -822,6 +832,7 @@ async def share_redeem(share_token: str, viewer: ViewerIn, request: Request):
             select r.id, r.content, r.content_hash, r.assignment_context, r.published_at,
                    r.competency_map, r.risk_score, r.ai_summary,
                    w.full_name as worker_name, w.registration_body, w.registration_number,
+                   w.registration_status,
                    o.name as issuing_org
             from "references" r
             join workers w on w.id = r.worker_id
@@ -846,7 +857,7 @@ async def share_redeem(share_token: str, viewer: ViewerIn, request: Request):
         await _notify_worker_opened(c, grant["reference_id"], viewer.name, viewer.email, viewer.organisation, False)
     return {
         "reference_id": str(ref["id"]),
-        "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}'},
+        "worker": {"name": ref["worker_name"], "registration": f'{ref["registration_body"]}:{ref["registration_number"]}', "registration_status": ref["registration_status"]},
         "issuing_org": ref["issuing_org"],
         "assignment_context": ref["assignment_context"],
         "published_at": ref["published_at"].isoformat() if ref["published_at"] else None,

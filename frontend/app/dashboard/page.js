@@ -89,11 +89,25 @@ function CreateOrg({ onDone }) {
 function RegisterWorker({ onDone }) {
   const [f, setF] = useState({ full_name: '', vertical: 'social_work', registration_body: 'swe', registration_number: '', dbs_certificate_number: '' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
   const up = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function submit() {
     setBusy(true); setMsg(''); setErr(false);
-    try { await api('/workers/verify', { method: 'POST', body: f }); onDone(); }
+    try { const r = await api('/workers/verify', { method: 'POST', body: f }); setResult(r); }
     catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
+  }
+  if (result) {
+    const st = result.registration_status; const reg = result.register || {};
+    return (
+      <div className="card">
+        <h2>Registration check</h2>
+        <div className="kv">Status: {st === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span> : st === 'failed' ? 'Not found / unverified' : 'Pending'}</div>
+        {reg.registered_name && <div className="kv">Register name: {reg.registered_name}</div>}
+        {reg.registered_until && <div className="kv">Registered until: {reg.registered_until}</div>}
+        {reg.detail && <div className="kv">{reg.detail}</div>}
+        <button onClick={onDone}>Continue to your portal</button>
+      </div>
+    );
   }
   return (
     <div className="card">
