@@ -135,7 +135,7 @@ export default function SharePage() {
           ref.worker.registration_status === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span>
           : ref.worker.registration_status === 'failed' ? 'Not found / unverified'
           : ref.worker.registration_status === 'expired' ? 'Registration expired'
-          : 'Verification pending'
+          : 'Verification pending (manual)'
         }</div>
         <div className="kv">Issued by: {ref.issuing_org}</div>
         <div className="kv">Context: {ref.assignment_context || '—'}</div>

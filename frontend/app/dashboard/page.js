@@ -114,7 +114,7 @@ function RegisterWorker({ onDone }) {
     return (
       <div className="card">
         <h2>Registration check</h2>
-        <div className="kv">Status: {st === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span> : st === 'failed' ? 'Not found / unverified' : 'Pending'}</div>
+        <div className="kv">Status: {st === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span> : st === 'failed' ? 'Not found on the SWE register' : 'Pending — manual verification'}</div>
         {reg.registered_name && <div className="kv">Register name: {reg.registered_name}</div>}
         {reg.registered_until && <div className="kv">Registered until: {reg.registered_until}</div>}
         {reg.detail && <div className="kv">{reg.detail}</div>}

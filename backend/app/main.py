@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import ai, db, email
+from . import ai, db, email, swe
 from .auth import current_user, require_org_actor, require_worker
 from .hashing import content_hash, identity_hash, new_share_token, token_hash
 from .swe import check_registration
@@ -130,6 +130,10 @@ class InviteIn(BaseModel):
     role: str = "hiring_manager"
 
 
+class SweImportIn(BaseModel):
+    csv: str
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -164,6 +168,32 @@ async def health():
     async with db.pool().acquire() as c:
         await c.fetchval("select 1")
     return {"ok": True}
+
+
+@app.post("/admin/swe-register/import")
+async def swe_register_import(body: SweImportIn, x_import_token: str | None = Header(default=None)):
+    """Upsert SWE register rows from an official employer CSV export.
+    Gated by the SWE_IMPORT_TOKEN secret (sent as X-Import-Token)."""
+    secret = os.environ.get("SWE_IMPORT_TOKEN")
+    if not secret:
+        raise HTTPException(503, "import is not configured")
+    if x_import_token != secret:
+        raise HTTPException(403, "invalid import token")
+    rows = swe.parse_csv(body.csv)
+    if not rows:
+        raise HTTPException(422, "no rows parsed — check the CSV has a header row with a registration number column")
+    async with db.pool().acquire() as c:
+        async with c.transaction():
+            for r in rows:
+                await c.execute(
+                    "insert into swe_register (registration_number, registered_name, status, registered_until, town, updated_at) "
+                    "values ($1, $2, $3, $4, $5, now()) "
+                    "on conflict (registration_number) do update set "
+                    "registered_name = excluded.registered_name, status = excluded.status, "
+                    "registered_until = excluded.registered_until, town = excluded.town, updated_at = now()",
+                    r["number"], r["name"], r["status"], r["until"], r["town"],
+                )
+    return {"imported": len(rows)}
 
 
 @app.get("/me")

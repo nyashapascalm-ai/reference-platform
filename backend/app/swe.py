@@ -1,67 +1,34 @@
-"""Registration checks against professional registers.
+"""Registration checks against a local copy of the Social Work England register.
 
-Social Work England (SWE) publishes a public page per registrant at
-  /umbraco/surface/searchregister/socialworker/{number}
-We fetch it and read the visible "Status:" / "Registered name:" / "Registered until:"
-fields. Mapping onto our verification_status_t:
-  - "Registered" (incl. "subject to conditions")  -> verified
-  - "no longer registered" / removed / not found   -> failed
-  - any network or parse failure                    -> pending  (never falsely verify,
-                                                                 never hard-block)
+SWE blocks server-side scraping of its website, so we no longer fetch it live.
+Instead we keep a local copy of the register (table swe_register), populated from
+SWE's official employer CSV export via the token-gated import endpoint, and check
+against that. Mapping onto verification_status_t:
+  - status starts with "Registered"            -> verified
+  - "no longer registered"/removed/suspended   -> failed
+  - number not in our copy:
+        SWE_REGISTER_COMPLETE truthy            -> failed (genuinely not on register)
+        otherwise                                -> pending (our copy may be partial)
 
-Other registers (NMC/GMC/HCPC/TRN) are not yet automated and return 'pending' honestly.
+Other registers (NMC/GMC/HCPC/TRN) are not yet automated and return 'pending'.
 """
-import html as _html
-import re
+import csv
+import io
+import os
 from datetime import datetime, timezone
 
-import httpx
+from . import db
 
 _VALID_BODIES = {"swe", "nmc", "gmc", "hcpc", "trn"}
-_SWE_URL = "https://www.socialworkengland.org.uk/umbraco/surface/searchregister/socialworker/{number}"
-_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-_HEADERS = {
-    "User-Agent": _UA,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-GB,en;q=0.9",
-    "Cache-Control": "no-cache",
-}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _to_text(raw: str) -> str:
-    raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
-    raw = re.sub(r"(?s)<[^>]+>", " ", raw)
-    return re.sub(r"\s+", " ", _html.unescape(raw)).strip()
-
-
-def _field(text: str, label: str, stop_words: list) -> str:
-    stop = "|".join(re.escape(s) for s in stop_words)
-    m = re.search(rf"{re.escape(label)}\s*(.+?)\s*(?:{stop})", text, re.IGNORECASE)
-    return m.group(1).strip() if m else None
-
-
-def parse_swe(raw_html: str, norm: str) -> dict:
-    """Pure parser (no network) so it can be unit-tested."""
-    text = _to_text(raw_html)
-    if "Registration Number" not in text or norm not in text or "Status:" not in text:
-        return {"status": "failed", "detail": "not found on the Social Work England register", "number": norm}
-    status_text = _field(text, "Status:", ["Read more", "Town of employment", "Registered from"])
-    name = _field(text, "Registered name:", ["This is the name", "Registration Number"])
-    until = _field(text, "Registered until:", ["This date", "Annotations", "Guide to the register"])
-    s = (status_text or "").lower()
-    if s.startswith("registered"):
-        mapped = "verified"
-    elif any(w in s for w in ("no longer", "removed", "not registered", "suspended")):
-        mapped = "failed"
-    else:
-        mapped = "pending"
-    return {"status": mapped, "register_status": status_text, "registered_name": name,
-            "registered_until": until, "number": norm}
+def _norm(number: str) -> str:
+    n = (number or "").strip().upper()
+    return n if n.startswith("SW") else f"SW{n}"
 
 
 async def check_registration(registration_body: str, registration_number: str) -> dict:
@@ -76,18 +43,59 @@ async def check_registration(registration_body: str, registration_number: str) -
 
 
 async def _check_swe(number: str) -> dict:
-    norm = number if number.startswith("SW") else f"SW{number}"
-    url = _SWE_URL.format(number=norm)
-    try:
-        async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers=_HEADERS) as cx:
-            r = await cx.get(url)
-        if r.status_code != 200:
-            return {"status": "pending", "checked_at": _now(),
-                    "detail": f"register returned HTTP {r.status_code}", "number": norm}
-        out = parse_swe(r.text, norm)
-        out["checked_at"] = _now()
-        out["source"] = url
-        return out
-    except Exception as e:
-        return {"status": "pending", "checked_at": _now(),
-                "detail": f"register unreachable ({e.__class__.__name__})", "number": norm}
+    norm = _norm(number)
+    async with db.pool().acquire() as c:
+        row = await c.fetchrow(
+            "select registered_name, status, registered_until from swe_register where registration_number = $1",
+            norm,
+        )
+    if row:
+        st = (row["status"] or "").lower()
+        if st.startswith("registered"):
+            mapped = "verified"
+        elif any(w in st for w in ("no longer", "removed", "not registered", "suspended")):
+            mapped = "failed"
+        else:
+            mapped = "pending"
+        return {"status": mapped, "checked_at": _now(), "register_status": row["status"],
+                "registered_name": row["registered_name"], "registered_until": row["registered_until"],
+                "number": norm, "source": "Social Work England register (local copy)"}
+    complete = os.environ.get("SWE_REGISTER_COMPLETE", "").lower() in ("1", "true", "yes")
+    if complete:
+        return {"status": "failed", "checked_at": _now(),
+                "detail": "not found on the Social Work England register", "number": norm}
+    return {"status": "pending", "checked_at": _now(),
+            "detail": "awaiting verification against the Social Work England register", "number": norm}
+
+
+def parse_csv(text: str) -> list:
+    """Tolerantly parse SWE's employer CSV export into register rows."""
+    reader = csv.DictReader(io.StringIO(text))
+    headers = reader.fieldnames or []
+    lower = {(h or "").strip().lower(): h for h in headers}
+
+    def find(*keys):
+        for k, orig in lower.items():
+            if any(key in k for key in keys):
+                return orig
+        return None
+
+    c_num = find("registration number", "reg no", "number")
+    c_name = find("name")
+    c_status = find("status")
+    c_until = find("until", "expiry", "expires", "valid to", "registered to")
+    c_town = find("town", "employer")
+
+    rows = []
+    for r in reader:
+        raw = (r.get(c_num) or "").strip() if c_num else ""
+        if not raw:
+            continue
+        rows.append({
+            "number": _norm(raw),
+            "name": (r.get(c_name) or "").strip() if c_name else None,
+            "status": (r.get(c_status) or "").strip() if c_status else None,
+            "until": (r.get(c_until) or "").strip() if c_until else None,
+            "town": (r.get(c_town) or "").strip() if c_town else None,
+        })
+    return rows
