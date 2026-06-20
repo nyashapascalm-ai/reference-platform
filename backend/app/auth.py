@@ -1,26 +1,35 @@
-"""Authentication: verify the Supabase login token and resolve identity.
-
-The frontend logs a user in via Supabase, which issues a signed JWT (HS256, signed
-with the project's JWT secret). The backend verifies that token on each request and
-derives WHO is acting from it — never from a client-supplied header.
-
-  current_user      -> the logged-in Supabase user (id + email)
-  require_org_actor -> that user resolved to an org membership (org_id + role)
-  require_worker    -> that user resolved to a verified worker identity
-"""
+﻿"""Authentication: verify the Supabase login token and resolve identity."""
 import os
 from uuid import UUID
 
 import jwt
+from jwt import PyJWKClient
 from fastapi import Depends, Header, HTTPException
 
 from . import db
 
+_jwks_client = None
+
+
+def _jwks() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        url = os.environ.get("SUPABASE_JWKS_URL")
+        if not url:
+            base = os.environ["SUPABASE_URL"].rstrip("/")
+            url = f"{base}/auth/v1/.well-known/jwks.json"
+        _jwks_client = PyJWKClient(url)
+    return _jwks_client
+
 
 def decode_token(token: str) -> dict:
-    secret = os.environ["SUPABASE_JWT_SECRET"]
     try:
-        return jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated")
+        alg = jwt.get_unverified_header(token).get("alg", "")
+        if alg == "HS256":
+            secret = os.environ["SUPABASE_JWT_SECRET"]
+            return jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated")
+        key = _jwks().get_signing_key_from_jwt(token).key
+        return jwt.decode(token, key, algorithms=["ES256", "RS256"], audience="authenticated")
     except jwt.ExpiredSignatureError:
         raise HTTPException(401, "login session expired")
     except jwt.InvalidTokenError:
@@ -50,11 +59,8 @@ async def require_org_actor(user: dict = Depends(current_user)) -> dict:
 async def require_worker(user: dict = Depends(current_user)) -> dict:
     async with db.pool().acquire() as c:
         row = await c.fetchrow(
-            """
-            select w.id from workers w
-            join profiles p on p.id = w.profile_id
-            where p.id = $1::uuid
-            """,
+            "select w.id from workers w join profiles p on p.id = w.profile_id "
+            "where p.id = $1::uuid",
             user["user_id"],
         )
     if row is None:
