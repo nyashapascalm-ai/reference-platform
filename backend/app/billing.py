@@ -131,34 +131,72 @@ def billing_portal(customer_id, return_url) -> str:
 
 
 # ---- Webhook handling (async; takes parsed event + connection) ----
+def _sub_price_and_period(sub: dict):
+    """Extract price id and current_period_end across Stripe API versions.
+    In newer versions current_period_end moved onto subscription items."""
+    items = (sub.get("items") or {}).get("data") or []
+    price = None
+    period_end = sub.get("current_period_end")
+    if items:
+        it = items[0]
+        price = (it.get("price") or {}).get("id")
+        if period_end is None:
+            period_end = it.get("current_period_end")
+    return price, period_end
+
+
+async def _apply_subscription(sub: dict, conn) -> None:
+    cust = sub.get("customer")
+    status = sub.get("status", "active")
+    price, period_end = _sub_price_and_period(sub)
+    plan = price_to_plan().get(price, "free")
+    seats = PLANS.get(plan, PLANS["free"])["seats"]
+    pe_ts = datetime.fromtimestamp(period_end, tz=timezone.utc) if period_end else None
+    await conn.execute(
+        "update billing_customers set plan=$2, status=$3, seats=$4, stripe_subscription_id=$5, "
+        "current_period_end=$6, updated_at=now() where stripe_customer_id=$1",
+        cust, plan, status, seats, sub.get("id"), pe_ts,
+    )
+
+
 async def handle_event(event: dict, conn) -> None:
     t = event.get("type")
     obj = (event.get("data") or {}).get("object") or {}
 
-    if t == "checkout.session.completed" and obj.get("mode") == "payment":
-        md = obj.get("metadata") or {}
-        org_id = md.get("org_id")
-        qty = int(md.get("credits") or 0)
-        if org_id and qty:
-            await conn.execute(
-                "insert into billing_credits (org_id, delta, reason) values ($1, $2, 'purchase')",
-                org_id, qty,
-            )
+    if t == "checkout.session.completed":
+        # PAYG credit purchase
+        if obj.get("mode") == "payment":
+            md = obj.get("metadata") or {}
+            org_id = md.get("org_id")
+            qty = int(md.get("credits") or 0)
+            if org_id and qty:
+                await conn.execute(
+                    "insert into billing_credits (org_id, delta, reason) values ($1, $2, 'purchase')",
+                    org_id, qty,
+                )
+        # Subscription checkout — resolve the subscription and apply it.
+        elif obj.get("mode") == "subscription" and obj.get("subscription"):
+            sub = obj["subscription"]
+            if isinstance(sub, str) and configured():
+                try:
+                    _init()
+                    sub = stripe.Subscription.retrieve(sub)
+                except Exception:
+                    sub = None
+            if isinstance(sub, dict):
+                await _apply_subscription(sub, conn)
 
     elif t in ("customer.subscription.created", "customer.subscription.updated"):
-        cust = obj.get("customer")
-        status = obj.get("status", "active")
-        items = (obj.get("items") or {}).get("data") or []
-        price = items[0]["price"]["id"] if items else None
-        plan = price_to_plan().get(price, "free")
-        seats = PLANS.get(plan, PLANS["free"])["seats"]
-        pe = obj.get("current_period_end")
-        pe_ts = datetime.fromtimestamp(pe, tz=timezone.utc) if pe else None
-        await conn.execute(
-            "update billing_customers set plan=$2, status=$3, seats=$4, stripe_subscription_id=$5, "
-            "current_period_end=$6, updated_at=now() where stripe_customer_id=$1",
-            cust, plan, status, seats, obj.get("id"), pe_ts,
-        )
+        sub = obj
+        # If the inline event is missing what we need, retrieve it fresh.
+        price, _ = _sub_price_and_period(sub)
+        if not price and obj.get("id") and configured():
+            try:
+                _init()
+                sub = stripe.Subscription.retrieve(obj["id"])
+            except Exception:
+                sub = obj
+        await _apply_subscription(sub, conn)
 
     elif t == "customer.subscription.deleted":
         cust = obj.get("customer")
