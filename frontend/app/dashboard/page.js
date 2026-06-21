@@ -59,7 +59,25 @@ export default function Dashboard() {
       </div>
       {error && <div className="msg err">{error}</div>}
 
-      {!me?.org_id && !me?.worker_id && <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />}
+      {me?.is_super_admin && (
+        <div className="card" style={{ borderLeft: '3px solid var(--violet, #6C5CE7)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div><b style={{ color: 'var(--text)' }}>You{'\u2019'}re signed in as Reffolio staff</b></div>
+              <div className="kv">Manage organisations, billing, analytics and reports in the operator console.</div>
+            </div>
+            <button style={{ marginTop: 0 }} onClick={() => router.push('/admin')}>Open admin console</button>
+          </div>
+        </div>
+      )}
+
+      {!me?.org_id && !me?.worker_id && !me?.is_super_admin && <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />}
+      {!me?.org_id && !me?.worker_id && me?.is_super_admin && (
+        <div className="card">
+          <h2>Staff account</h2>
+          <p className="kv">This account isn{'\u2019'}t set up as an organisation or worker — that{'\u2019'}s expected for a staff login. Use the admin console above.</p>
+        </div>
+      )}
 
       {me?.org_id && me.role === 'org_admin' ? (
         <>

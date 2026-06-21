@@ -543,12 +543,15 @@ async def me(actor=Depends(current_user)):
         worker = await c.fetchrow(
             "select id from workers where profile_id = $1::uuid", actor["user_id"]
         )
+    admins = [e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMAILS", "").split(",") if e.strip()]
+    is_super = bool(admins) and (actor.get("email") or "").lower() in admins
     return {
         "user_id": actor["user_id"],
         "email": actor["email"],
         "org_id": str(prof["org_id"]) if prof and prof["org_id"] else None,
         "role": prof["role"] if prof else None,
         "worker_id": str(worker["id"]) if worker else None,
+        "is_super_admin": is_super,
     }
 
 
