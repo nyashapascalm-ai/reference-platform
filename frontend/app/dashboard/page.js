@@ -63,6 +63,7 @@ export default function Dashboard() {
       {me?.org_id && <OrgPanel me={me} />}
       {me?.org_id && <TeamPanel me={me} />}
       {me?.org_id && <BillingPanel me={me} />}
+      {me?.org_id && me?.role === 'org_admin' && <AdminOversightPanel me={me} />}
       {me?.worker_id && <WorkerPanel me={me} />}
     </div>
   );
@@ -339,6 +340,121 @@ function ReferenceBoard({ refs, onPublish }) {
       {Column('draft', 'Draft', 'draft', drafts, false, 'Drafts you create appear here')}
       {Column('published', 'Published', 'published', published, true, 'Drop a draft here to publish')}
       {Column('viewed', 'Viewed', 'viewed', viewed, false, 'Published references that have been opened')}
+    </div>
+  );
+}
+
+function AdminOversightPanel({ me }) {
+  const [activity, setActivity] = useState(null);
+  const [records, setRecords] = useState([]);
+  const [tab, setTab] = useState('usage');
+  const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [a, r] = await Promise.all([api('/org/activity'), api('/org/records')]);
+      setActivity(a); setRecords(r.records || []);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function act(path, okMsg) {
+    setMsg(''); setErr(false);
+    try { await api(path, { method: 'POST' }); setMsg(okMsg); load(); }
+    catch (e) { setErr(true); setMsg(e.message); }
+  }
+
+  function exportCsv() {
+    const cols = ['worker_name', 'author_name', 'assignment_context', 'status', 'risk_score', 'referee_confirmed', 'opens', 'published_at', 'content_hash', 'frozen_at'];
+    const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const lines = [cols.join(',')].concat(records.map((r) => cols.map((c) => esc(r[c])).join(',')));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `reffolio-records-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (!activity) return null;
+  const t = activity.totals || {};
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+  const stat = (label, value) => (
+    <div style={{ flex: '1 1 110px', background: 'var(--bg-soft, #fff)', border: '1px solid var(--line, #e7e9f2)', borderRadius: 12, padding: '12px 14px' }}>
+      <div className="kv" style={{ textTransform: 'uppercase', fontSize: 10 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div className="card">
+      <h2>Oversight <Help text="Your management view. See how each member uses Reffolio, browse the full record of issued references for audits or hearings, and lock a member or freeze a reference if an issue arises. Visible to admins only." /></h2>
+
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        {stat('References', t.total ?? 0)}
+        {stat('Published', t.published ?? 0)}
+        {stat('Drafts', t.drafts ?? 0)}
+        {stat('Recipient opens', t.total_opens ?? 0)}
+        {stat('Frozen', t.frozen ?? 0)}
+      </div>
+
+      <div className="row" style={{ gap: 8, marginTop: 16 }}>
+        <button className={tab === 'usage' ? '' : 'ghost'} style={{ marginTop: 0 }} onClick={() => setTab('usage')}>Team usage</button>
+        <button className={tab === 'records' ? '' : 'ghost'} style={{ marginTop: 0 }} onClick={() => setTab('records')}>Records ({records.length})</button>
+      </div>
+      {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
+
+      {tab === 'usage' && (
+        <div style={{ marginTop: 12 }}>
+          {activity.members.map((m) => (
+            <div className="item" key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div>
+                <div>
+                  {m.full_name} <span className="badge">{m.title || (m.role === 'org_admin' ? 'Admin' : 'Member')}</span>
+                  {m.role === 'org_admin' && <span className="badge pub" style={{ marginLeft: 6 }}>admin</span>}
+                  {m.is_locked && <span className="badge" style={{ marginLeft: 6, background: '#fde8e8', color: '#b42318' }}>locked</span>}
+                </div>
+                <div className="kv">{m.published} published · {m.drafts} drafts · last active {fmtDate(m.last_active)}</div>
+              </div>
+              {m.id !== me?.user_id && (
+                m.is_locked
+                  ? <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/org/members/${m.id}/unlock`, 'Member unlocked.')}>Unlock</button>
+                  : <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/org/members/${m.id}/lock`, 'Member locked.')}>Lock</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'records' && (
+        <div style={{ marginTop: 12 }}>
+          <button className="ghost" style={{ marginTop: 0, marginBottom: 8 }} onClick={exportCsv} disabled={!records.length}>Download records (CSV)</button>
+          {records.length === 0 && <div className="kv">No references issued yet.</div>}
+          {records.map((r) => (
+            <div className="item" key={r.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <div>
+                  <div>
+                    <b style={{ color: 'var(--text)' }}>{r.worker_name}</b>
+                    <span className="badge" style={{ marginLeft: 6 }}>{r.status}</span>
+                    {r.referee_confirmed && <span className="badge pub" style={{ marginLeft: 6 }}>referee confirmed</span>}
+                    {r.frozen_at && <span className="badge" style={{ marginLeft: 6, background: '#fef0c7', color: '#92600a' }}>frozen</span>}
+                  </div>
+                  <div className="kv">
+                    by {r.author_name || '—'} · {r.assignment_context || 'no context'} · {r.opens} open{r.opens === 1 ? '' : 's'}
+                    {r.risk_score != null && <> · risk {r.risk_score}</>}
+                    {r.published_at && <> · published {fmtDate(r.published_at)}</>}
+                  </div>
+                  {r.content_hash && <div className="kv" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>hash {String(r.content_hash).slice(0, 16)}…</div>}
+                </div>
+                {r.frozen_at
+                  ? <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/org/references/${r.id}/unfreeze`, 'Reference unfrozen.')}>Unfreeze</button>
+                  : <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/org/references/${r.id}/freeze`, 'Reference frozen — share links are now blocked.')}>Freeze</button>
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
