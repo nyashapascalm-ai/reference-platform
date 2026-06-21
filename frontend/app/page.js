@@ -35,6 +35,15 @@ export default function Home() {
     if (error) { setErr(true); setMsg(error.message); }
     else router.push('/dashboard');
   }
+  async function forgotPassword() {
+    if (!email.trim()) { setErr(true); setMsg('Enter your email above, then click reset.'); return; }
+    setBusy(true); setMsg(''); setErr(false);
+    const redirectTo = `${window.location.origin}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+    setBusy(false);
+    if (error) { setErr(true); setMsg(error.message); }
+    else { setErr(false); setMsg('If an account exists for that email, a reset link is on its way. Check your inbox (and spam).'); }
+  }
 
   const roleBtn = (val, label) => (
     <button
@@ -68,6 +77,10 @@ export default function Home() {
           <button onClick={signUp} disabled={busy}>Create account</button>
           <button className="ghost" onClick={signIn} disabled={busy}>Sign in</button>
         </div>
+        <button type="button" onClick={forgotPassword} disabled={busy}
+          style={{ background: 'none', border: 'none', padding: '8px 0 0', margin: 0, color: 'var(--violet, #6C5CE7)', cursor: 'pointer', font: 'inherit', fontSize: 13, width: 'auto' }}>
+          Forgot password?
+        </button>
         {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
       </div>
     </div>
