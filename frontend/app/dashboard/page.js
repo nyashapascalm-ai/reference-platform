@@ -76,7 +76,7 @@ function Onboarding({ onDone, role, setRole }) {
   return (
     <div className="card">
       <h2>What brings you here?</h2>
-      <p className="muted">Choose how you’ll use Reference Custody. You can change this by signing out.</p>
+      <p className="muted">Choose how you’ll use Reffolio. You can change this by signing out.</p>
       <div className="row">
         <button onClick={() => setRole('org')}>I issue references (organisation)</button>
         <button className="ghost" onClick={() => setRole('worker')}>I collect my references (worker)</button>
@@ -234,9 +234,9 @@ function OrgPanel({ me }) {
       <select value={tpl?.id || ''} onChange={(e) => setTpl(templates.find((t) => t.id === e.target.value))}>
         {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.version})</option>)}
       </select>
-      <label>Worker ID (from the worker’s portal) <Help text="Every worker has a unique Refera Worker ID shown in their portal. Ask the worker to send it to you, then paste it here so the reference is bound to the right person." /></label>
+      <label>Worker ID (from the worker’s portal) <Help text="Every worker has a unique Reffolio Worker ID shown in their portal. Ask the worker to send it to you, then paste it here so the reference is bound to the right person." /></label>
       <input value={meta.worker_id} onChange={up('worker_id')} placeholder="paste worker_id" />
-      <label>Draft with AI (paste rough notes) <Help text="Paste your rough notes about the worker. Refera's AI turns them into a fair, evidence-based reference filling the required fields. You can edit everything before publishing." /></label>
+      <label>Draft with AI (paste rough notes) <Help text="Paste your rough notes about the worker. Reffolio's AI turns them into a fair, evidence-based reference filling the required fields. You can edit everything before publishing." /></label>
       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
         style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 }}
         placeholder="e.g. Sam worked here 2022-24 as senior practitioner, strong on assessments, no conduct issues" />
@@ -251,7 +251,7 @@ function OrgPanel({ me }) {
       ))}
       <label>Referee name</label><input value={meta.ref_name} onChange={up('ref_name')} />
       <label>Referee job title</label><input value={meta.ref_title} onChange={up('ref_title')} />
-      <label>Referee work email (must match your domain) <Help text="The named referee's work email. If its domain matches your organisation's verified domain, Refera marks it 'domain verified'. The referee is also emailed a link to personally confirm they provided the reference." /></label>
+      <label>Referee work email (must match your domain) <Help text="The named referee's work email. If its domain matches your organisation's verified domain, Reffolio marks it 'domain verified'. The referee is also emailed a link to personally confirm they provided the reference." /></label>
       <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@barchester.gov.uk" />
       <div className="row">
         <button onClick={draft} disabled={busy || !tpl}>Create draft</button>

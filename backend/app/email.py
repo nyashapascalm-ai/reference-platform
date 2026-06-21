@@ -13,7 +13,7 @@ async def send_email(to: str, subject: str, html: str) -> bool:
     key = os.environ.get("RESEND_API_KEY")
     if not key:
         return False
-    sender = os.environ.get("EMAIL_FROM", "Reference Custody <onboarding@resend.dev>")
+    sender = os.environ.get("EMAIL_FROM", "Reffolio <onboarding@resend.dev>")
     try:
         async with httpx.AsyncClient(timeout=15) as cx:
             r = await cx.post(

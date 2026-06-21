@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Refera — verified, consent-shared references',
-  description: 'Refera holds employment references in trust: verified, tamper-evident, and shared only with consent.',
+  title: 'Reffolio — verified, consent-shared references',
+  description: 'Reffolio holds employment references in trust: verified, tamper-evident, and shared only with consent.',
 };
 
 export default function RootLayout({ children }) {

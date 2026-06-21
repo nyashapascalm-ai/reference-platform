@@ -47,7 +47,7 @@ export default function Home() {
 
   return (
     <div className="center">
-      <div className="brand">Refera</div>
+      <div className="brand">Reffolio</div>
       <p className="muted" style={{ marginTop: 6 }}>References held in trust — verified, tamper-evident, shared only with consent.</p>
       <div className="card" style={{ marginTop: 24 }}>
         <label>I'm joining as</label>

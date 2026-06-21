@@ -1,4 +1,4 @@
-"""Reference Custody Platform — backend API (Step 3: real auth).
+"""Reffolio — backend API (Step 3: real auth).
 
 Identity now comes from the verified Supabase login token, not from headers.
 
@@ -32,7 +32,7 @@ async def lifespan(_: FastAPI):
     await db.disconnect()
 
 
-app = FastAPI(title="Reference Custody Platform API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Reffolio API", version="0.3.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 _wildcard = _origins == ["*"] or not _origins
@@ -331,7 +331,7 @@ async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
     link = f"{base}/invite/{raw}"
     sent = await email.send_email(
         email_in,
-        f"You've been invited to {org['name']} on Reference Custody",
+        f"You've been invited to {org['name']} on Reffolio",
         f"<p>You've been invited to join <b>{org['name']}</b> as {role.replace('_', ' ')}.</p>"
         f"<p>Accept your invite:</p><p><a href='{link}'>{link}</a></p>"
         f"<p>Sign in (or create an account) with this email address to accept.</p>",
