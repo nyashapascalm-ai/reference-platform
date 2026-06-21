@@ -66,7 +66,7 @@ export default function Dashboard() {
           <AdminOversightPanel me={me} />
           <TeamPanel me={me} />
           <BillingPanel me={me} />
-          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.04em', margin: '22px 0 -6px' }}>
+          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.04em', margin: '28px 0 12px' }}>
             You can also issue a reference
           </div>
           <OrgPanel me={me} />
