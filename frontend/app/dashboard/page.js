@@ -4,6 +4,19 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { api } from '../../lib/api';
 
+function Help({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="help">
+      <button type="button" className="help-btn" onClick={() => setOpen((o) => !o)} aria-label="Help">?</button>
+      {open && (<>
+        <div className="help-backdrop" onClick={() => setOpen(false)} />
+        <div className="help-pop" dangerouslySetInnerHTML={{ __html: text }} />
+      </>)}
+    </span>
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [me, setMe] = useState(null);
@@ -147,7 +160,7 @@ function OrgPanel({ me }) {
   const [content, setContent] = useState({});
   const [meta, setMeta] = useState({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
-  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({}); const [draftScore, setDraftScore] = useState(null); const [lastDraft, setLastDraft] = useState(null);
+  const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({}); const [draftScore, setDraftScore] = useState(null);
 
   async function aiDraft() {
     setAiMsg('Drafting…'); setErr(false);
@@ -198,22 +211,11 @@ function OrgPanel({ me }) {
         referee: meta.ref_email ? { full_name: meta.ref_name, job_title: meta.ref_title, work_email: meta.ref_email } : null,
       };
       const r = await api('/references', { method: 'POST', body });
-      setLastDraft({ id: r.reference_id, status: 'draft' });
-      setMsg('Draft created' + (r.referee ? ` · referee domain verified: ${r.referee.domain_verified}` : '') + ' — review, then Publish.');
+      setContent({}); setNotes(''); setDraftScore(null); setFlags(null);
+      setMeta({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
+      setMsg('Draft created' + (r.referee ? ` · referee domain verified: ${r.referee.domain_verified}` : '') + ' — it’s now in the Draft column. Drag it to Published when ready.');
       load();
     } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
-  }
-  async function publishInline() {
-    setBusy(true); setMsg(''); setErr(false);
-    try { const r = await api(`/references/${lastDraft.id}/publish`, { method: 'POST' });
-      setLastDraft({ id: lastDraft.id, status: 'published', hash: r.content_hash });
-      setMsg('Published \u2713 — the worker can now share it.'); load(); }
-    catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
-  }
-  function newReference() {
-    setLastDraft(null); setContent({}); setNotes(''); setDraftScore(null); setFlags(null);
-    setMeta({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
-    setMsg(''); setAiMsg('');
   }
   async function publish(id) {
     setMsg(''); setErr(false);
@@ -229,9 +231,9 @@ function OrgPanel({ me }) {
       <select value={tpl?.id || ''} onChange={(e) => setTpl(templates.find((t) => t.id === e.target.value))}>
         {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.version})</option>)}
       </select>
-      <label>Worker ID (from the worker’s portal)</label>
+      <label>Worker ID (from the worker’s portal) <Help text="Every worker has a unique Refera Worker ID shown in their portal. Ask the worker to send it to you, then paste it here so the reference is bound to the right person." /></label>
       <input value={meta.worker_id} onChange={up('worker_id')} placeholder="paste worker_id" />
-      <label>Draft with AI (paste rough notes)</label>
+      <label>Draft with AI (paste rough notes) <Help text="Paste your rough notes about the worker. Refera's AI turns them into a fair, evidence-based reference filling the required fields. You can edit everything before publishing." /></label>
       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
         style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 }}
         placeholder="e.g. Sam worked here 2022-24 as senior practitioner, strong on assessments, no conduct issues" />
@@ -246,17 +248,14 @@ function OrgPanel({ me }) {
       ))}
       <label>Referee name</label><input value={meta.ref_name} onChange={up('ref_name')} />
       <label>Referee job title</label><input value={meta.ref_title} onChange={up('ref_title')} />
-      <label>Referee work email (must match your domain)</label>
+      <label>Referee work email (must match your domain) <Help text="The named referee's work email. If its domain matches your organisation's verified domain, Refera marks it 'domain verified'. The referee is also emailed a link to personally confirm they provided the reference." /></label>
       <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@barchester.gov.uk" />
       <div className="row">
-        {!lastDraft && <button onClick={draft} disabled={busy || !tpl}>Create draft</button>}
-        {lastDraft && lastDraft.status === 'draft' && <button onClick={publishInline} disabled={busy}>Publish</button>}
-        {lastDraft && lastDraft.status === 'published' && <button onClick={newReference}>New reference</button>}
+        <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
         <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
         <button className="ghost" onClick={analyseDraft} disabled={Object.keys(content).length === 0}>Analyse draft</button>
         {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
       </div>
-      {lastDraft && lastDraft.status === 'published' && <div className="hash" style={{ marginTop: 8 }}>{lastDraft.hash}</div>}
       {draftScore && (
         <div style={{ marginTop: 8 }}>
           <div className="kv">Draft risk score: <b style={{ color: 'var(--text)' }}>{draftScore.risk_score}</b> / 100</div>
@@ -269,7 +268,7 @@ function OrgPanel({ me }) {
       ))}
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
 
-      <h2 style={{ marginTop: 24 }}>Issued references</h2>
+      <h2 style={{ marginTop: 24 }}>Issued references <Help text="Your references as a board. <b>Draft</b>: created but not yet live. <b>Published</b>: finalised with a tamper-evident hash. <b>Viewed</b>: a published reference that someone has opened. Drag a draft into Published to publish it." /></h2>
       <p className="muted">Drag a draft into <b>Published</b> to publish it (the tamper-evident hash is generated on drop).</p>
       <ReferenceBoard refs={refs} onPublish={publish} />
     </div>
@@ -407,11 +406,11 @@ function WorkerPanel({ me }) {
 
   return (
     <div className="card">
-      <h2>Your worker identity</h2>
+      <h2>Your worker identity <Help text="Your Worker ID identifies you to organisations. Give it to an employer or council so they can write a reference bound to you. It also confirms your professional registration (e.g. Social Work England)." /></h2>
       <p className="muted">Give this Worker ID to an issuing organisation so they can write you a reference:</p>
       <div className="share">{me.worker_id}</div>
 
-      <h2 style={{ marginTop: 24 }}>Your references</h2>
+      <h2 style={{ marginTop: 24 }}>Your references <Help text="References issued about you. Create a share link to send one to an employer. You'll see when it's opened and by whom — these are your read receipts." /></h2>
       {refs.length === 0 && <p className="muted">No references yet. Once an organisation issues one, it appears here.</p>}
       {refs.map((r) => (
         <div className="item" key={r.id}>
@@ -435,7 +434,7 @@ function WorkerPanel({ me }) {
               <input value={pin[r.id]?.email || ''} onChange={(e) => setPin({ ...pin, [r.id]: { ...pin[r.id], email: e.target.value } })} placeholder="hr@employer.com" />
               <div className="kv" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
                 <input type="checkbox" style={{ width: 'auto' }} checked={pin[r.id]?.verify || false} onChange={(e) => setPin({ ...pin, [r.id]: { ...pin[r.id], verify: e.target.checked } })} />
-                Require recipient to verify their email (one-time code)
+                Require recipient to verify their email (one-time code) <Help text="When on, the person you send the link to must enter a one-time code emailed to that address before they can view the reference — proving they control the inbox. Your activity log then marks them as identity-verified." />
               </div>
               <button onClick={() => share(r)}>Create share link</button>
             </div>

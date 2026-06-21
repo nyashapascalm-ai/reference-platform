@@ -3,6 +3,19 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '../../../lib/api';
 
+function Help({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="help">
+      <button type="button" className="help-btn" onClick={() => setOpen((o) => !o)} aria-label="Help">?</button>
+      {open && (<>
+        <div className="help-backdrop" onClick={() => setOpen(false)} />
+        <div className="help-pop">{text}</div>
+      </>)}
+    </span>
+  );
+}
+
 export default function SharePage() {
   const { token } = useParams();
   const [preview, setPreview] = useState(null);
@@ -131,7 +144,7 @@ export default function SharePage() {
       <div className="card">
         <h2>{ref.worker.name}</h2>
         <div className="kv">Registration: {ref.worker.registration}</div>
-        <div className="kv">Register check: {
+        <div className="kv">Register check: <Help text="Whether the worker's professional registration number was found and active on the official register (e.g. Social Work England). Verified means it matched a current registration." /> {
           ref.worker.registration_status === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span>
           : ref.worker.registration_status === 'failed' ? 'Not found / unverified'
           : ref.worker.registration_status === 'expired' ? 'Registration expired'
@@ -159,7 +172,7 @@ export default function SharePage() {
           </div>
         )}
         <div className="item">
-          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11 }}>Tamper-evident hash</div>
+          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11 }}>Tamper-evident hash <Help text="A unique fingerprint of this reference's content, generated when it was published. If a single character were changed, this fingerprint would change — so it proves the content hasn't been altered since publication." /></div>
           <div className="hash">{ref.content_hash}</div>
         </div>
       </div>

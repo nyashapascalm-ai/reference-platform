@@ -155,3 +155,14 @@ button:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}
 .refcard.dragging{opacity:.45;border-style:dashed}
 .refcard .title{font-weight:600;font-size:14px;color:var(--text);margin-bottom:2px}
 .col-hint{font-size:11px;color:var(--muted);text-align:center;padding:14px 8px;border:1px dashed var(--line);border-radius:8px}
+
+/* ---- help tooltips (click to open) ---- */
+.help{position:relative;display:inline-flex;vertical-align:middle;margin-left:6px}
+.help-btn{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+  background:#E7EAF4;color:#5A6080;font-size:11px;font-weight:700;border:none;cursor:pointer;line-height:1;padding:0;margin:0;font-family:var(--font-body)}
+.help-btn:hover{background:var(--violet);color:#fff}
+.help-backdrop{position:fixed;inset:0;z-index:40}
+.help-pop{position:absolute;top:22px;left:0;z-index:41;width:250px;background:#fff;color:var(--text);
+  border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.5;font-weight:400;
+  text-transform:none;letter-spacing:normal;box-shadow:var(--shadow)}
+.help-pop b{color:var(--text)}
