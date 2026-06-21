@@ -52,18 +52,33 @@ export default function Dashboard() {
     <div className="wrap">
       <div className="topbar">
         <div>
-          <h1>Dashboard</h1>
-          <p className="muted">{me?.email}{me?.role ? ` · ${me.role}` : ''}</p>
+          <h1>{me?.role === 'org_admin' ? 'Management console' : 'Dashboard'}</h1>
+          <p className="muted">{me?.email}{me?.role ? ` · ${me.role === 'org_admin' ? 'admin' : (me.role || '').replace('_', ' ')}` : ''}</p>
         </div>
         <button className="ghost" onClick={signOut}>Sign out</button>
       </div>
       {error && <div className="msg err">{error}</div>}
 
       {!me?.org_id && !me?.worker_id && <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />}
-      {me?.org_id && <OrgPanel me={me} />}
-      {me?.org_id && <TeamPanel me={me} />}
-      {me?.org_id && <BillingPanel me={me} />}
-      {me?.org_id && me?.role === 'org_admin' && <AdminOversightPanel me={me} />}
+
+      {me?.org_id && me.role === 'org_admin' ? (
+        <>
+          <AdminOversightPanel me={me} />
+          <TeamPanel me={me} />
+          <BillingPanel me={me} />
+          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.04em', margin: '22px 0 -6px' }}>
+            You can also issue a reference
+          </div>
+          <OrgPanel me={me} />
+        </>
+      ) : me?.org_id ? (
+        <>
+          <OrgPanel me={me} />
+          <TeamPanel me={me} />
+          <BillingPanel me={me} />
+        </>
+      ) : null}
+
       {me?.worker_id && <WorkerPanel me={me} />}
     </div>
   );
