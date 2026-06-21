@@ -230,7 +230,7 @@ function OrgPanel({ me }) {
     <div className="card">
       <h2>Issue a reference</h2>
       <p className="muted">Organisation set up. Draft a practice-based reference, then publish it (server computes the tamper-evident hash).</p>
-      <label>Template</label>
+      <label>Template <Help text="The reference format you are filling in. Templates follow the statutory/regulatory standard for the sector (e.g. the social-work practice-based reference) and set which fields are required." /></label>
       <select value={tpl?.id || ''} onChange={(e) => setTpl(templates.find((t) => t.id === e.target.value))}>
         {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.version})</option>)}
       </select>
@@ -241,7 +241,7 @@ function OrgPanel({ me }) {
         style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 }}
         placeholder="e.g. Sam worked here 2022-24 as senior practitioner, strong on assessments, no conduct issues" />
       <button className="ghost" onClick={aiDraft} disabled={!tpl || !notes}>Draft with AI</button>
-      <label>Assignment context</label>
+      <label>Assignment context <Help text="The role or setting this reference relates to — e.g. the team, service or placement the worker was in (such as 'Children & Families team'). It gives the reader context for the reference." /></label>
       <input value={meta.assignment_context} onChange={up('assignment_context')} placeholder="Children & Families team" />
       {required.map((field) => (
         <div key={field}>
