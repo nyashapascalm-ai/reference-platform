@@ -17,9 +17,15 @@ PLANS = {
     "free":       {"seats": 2,      "api": False, "white_label": False, "label": "Free"},
     "starter":    {"seats": 3,      "api": False, "white_label": False, "label": "Team Starter"},
     "growth":     {"seats": 10,     "api": True,  "white_label": True,  "label": "Growth"},
+    "business":   {"seats": 25,     "api": True,  "white_label": True,  "label": "Business"},
     "enterprise": {"seats": 100000, "api": True,  "white_label": True,  "label": "Enterprise"},
 }
-_PRICE_ENV = {"starter": "STRIPE_PRICE_STARTER", "growth": "STRIPE_PRICE_GROWTH", "enterprise": "STRIPE_PRICE_ENTERPRISE"}
+_PRICE_ENV = {
+    "starter": "STRIPE_PRICE_STARTER",
+    "growth": "STRIPE_PRICE_GROWTH",
+    "business": "STRIPE_PRICE_BUSINESS",
+    "enterprise": "STRIPE_PRICE_ENTERPRISE",
+}
 
 
 def configured() -> bool:
@@ -39,15 +45,21 @@ def _init():
 
 def plan_price(plan: str):
     env = _PRICE_ENV.get(plan)
-    return os.environ.get(env) if env else None
+    val = os.environ.get(env) if env else None
+    if not val:
+        return None
+    return val.split(",")[0].strip()  # checkout uses the first (e.g. monthly)
 
 
 def price_to_plan() -> dict:
     m = {}
     for plan, env in _PRICE_ENV.items():
-        pid = os.environ.get(env)
-        if pid:
-            m[pid] = plan
+        val = os.environ.get(env)
+        if val:
+            for pid in val.split(","):
+                pid = pid.strip()
+                if pid:
+                    m[pid] = plan
     return m
 
 
