@@ -28,6 +28,9 @@ _PRICE_ENV = {
     "enterprise": "STRIPE_PRICE_ENTERPRISE",
 }
 
+# Indicative monthly GBP per plan, for super-admin MRR estimates only.
+PLAN_PRICE_GBP = {"starter": 49, "growth": 149, "business": 299}
+
 
 def configured() -> bool:
     return bool(os.environ.get("STRIPE_SECRET_KEY"))

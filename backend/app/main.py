@@ -42,6 +42,13 @@ async def require_org_admin(actor=Depends(require_org_actor)) -> dict:
     return actor
 
 
+async def require_super_admin(user=Depends(current_user)) -> dict:
+    admins = [e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMAILS", "").split(",") if e.strip()]
+    if not admins or (user.get("email") or "").lower() not in admins:
+        raise HTTPException(403, "super admin only")
+    return user
+
+
 
 _origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 _wildcard = _origins == ["*"] or not _origins
@@ -324,6 +331,60 @@ async def billing_debug(actor=Depends(require_org_admin)):
     return getattr(app.state, "last_webhook_error", {"error": None})
 
 
+# ---- Super admin (Reffolio staff; gated by SUPER_ADMIN_EMAILS) ----
+@app.get("/admin/overview")
+async def admin_overview(user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        orgs = await c.fetchval("select count(*) from orgs")
+        workers = await c.fetchval("select count(*) from workers")
+        refs_total = await c.fetchval('select count(*) from "references"')
+        refs_published = await c.fetchval("select count(*) from \"references\" where status = 'published'")
+        members = await c.fetchval("select count(*) from profiles where org_id is not null")
+        roles = await c.fetch("select role::text as role, count(*) as n from profiles group by role")
+        active_plans = await c.fetch(
+            "select plan, count(*) as n from billing_customers where status = 'active' group by plan"
+        )
+        all_plans = await c.fetch("select plan, status, count(*) as n from billing_customers group by plan, status")
+        credits = await c.fetchval("select coalesce(sum(delta),0) from billing_credits")
+        swe_rows = await c.fetchval("select count(*) from swe_register")
+        recent_orgs = await c.fetch("select count(*) from orgs where created_at > now() - interval '7 days'")
+    mrr = sum(billing.PLAN_PRICE_GBP.get(r["plan"], 0) * r["n"] for r in active_plans)
+    return {
+        "totals": {
+            "orgs": orgs, "workers": workers, "org_members": members,
+            "references": refs_total, "references_published": refs_published,
+            "swe_register_rows": swe_rows, "credits_outstanding": int(credits or 0),
+            "new_orgs_7d": recent_orgs[0]["count"] if recent_orgs else 0,
+        },
+        "roles": {r["role"]: r["n"] for r in roles},
+        "active_subscriptions": {r["plan"]: r["n"] for r in active_plans},
+        "plan_status": [dict(r) for r in all_plans],
+        "estimated_mrr_gbp": mrr,
+        "estimated_arr_gbp": mrr * 12,
+    }
+
+
+@app.get("/admin/orgs")
+async def admin_orgs(user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        rows = await c.fetch(
+            """
+            select o.id, o.name, o.org_type::text as org_type, o.vertical::text as vertical,
+                   o.is_active, o.created_at,
+                   coalesce(b.plan, 'free') as plan,
+                   coalesce(b.status, 'inactive') as status,
+                   coalesce(b.seats, 2) as seats,
+                   b.current_period_end,
+                   (select count(*) from profiles p where p.org_id = o.id) as members,
+                   (select count(*) from "references" r where r.issuing_org_id = o.id) as refs
+            from orgs o
+            left join billing_customers b on b.org_id = o.id
+            order by o.created_at desc
+            """
+        )
+    return {"orgs": [dict(r) for r in rows]}
+
+
 @app.get("/me")
 async def me(actor=Depends(current_user)):
     """Who am I, per my token — and what identities are attached."""
@@ -470,15 +531,52 @@ async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
 async def list_members(actor=Depends(require_org_actor)):
     async with db.pool().acquire() as c:
         members = await c.fetch(
-            "select full_name, email, role from profiles where org_id = $1 order by role, full_name",
+            "select id, full_name, email, role from profiles where org_id = $1 order by role, full_name",
             actor["org_id"],
         )
         pending = await c.fetch(
-            "select email, role, created_at from org_invites "
+            "select id, email, role, created_at from org_invites "
             "where org_id = $1 and accepted_at is null and expires_at > now() order by created_at desc",
             actor["org_id"],
         )
-    return {"members": [dict(m) for m in members], "pending_invites": [dict(p) for p in pending]}
+    return {
+        "members": [dict(m) for m in members],
+        "pending_invites": [dict(p) for p in pending],
+        "is_admin": actor["role"] == "org_admin",
+        "me": str(actor["user_id"]),
+    }
+
+
+@app.delete("/org/invites/{invite_id}")
+async def cancel_invite(invite_id: UUID, actor=Depends(require_org_admin)):
+    async with db.pool().acquire() as c:
+        row = await c.fetchrow(
+            "delete from org_invites where id = $1 and org_id = $2 and accepted_at is null returning id",
+            invite_id, actor["org_id"],
+        )
+    if not row:
+        raise HTTPException(404, "invite not found or already accepted")
+    return {"cancelled": True}
+
+
+@app.delete("/org/members/{profile_id}")
+async def remove_member(profile_id: UUID, actor=Depends(require_org_admin)):
+    if str(profile_id) == str(actor["user_id"]):
+        raise HTTPException(400, "you can't remove yourself")
+    async with db.pool().acquire() as c:
+        m = await c.fetchrow(
+            "select id, role from profiles where id = $1 and org_id = $2", profile_id, actor["org_id"]
+        )
+        if not m:
+            raise HTTPException(404, "member not found")
+        if m["role"] == "org_admin":
+            admins = await c.fetchval(
+                "select count(*) from profiles where org_id = $1 and role = 'org_admin'", actor["org_id"]
+            )
+            if admins <= 1:
+                raise HTTPException(400, "can't remove the last admin")
+        await c.execute("delete from profiles where id = $1 and org_id = $2", profile_id, actor["org_id"])
+    return {"removed": True}
 
 
 @app.get("/invite/{token}")
