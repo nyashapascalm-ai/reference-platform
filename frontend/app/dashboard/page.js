@@ -11,7 +11,10 @@ function Help({ text }) {
       <button type="button" className="help-btn" onClick={() => setOpen((o) => !o)} aria-label="Help">?</button>
       {open && (<>
         <div className="help-backdrop" onClick={() => setOpen(false)} />
-        <div className="help-pop" dangerouslySetInnerHTML={{ __html: text }} />
+        <div className="help-pop">
+          <button type="button" className="help-close" onClick={() => setOpen(false)} aria-label="Close">×</button>
+          <span className="help-text" dangerouslySetInnerHTML={{ __html: text }} />
+        </div>
       </>)}
     </span>
   );
@@ -252,8 +255,11 @@ function OrgPanel({ me }) {
       <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@barchester.gov.uk" />
       <div className="row">
         <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
+        <Help text="Saves the reference as a draft and places it in the Draft column. Nothing is published or shared yet — you publish later by dragging it to Published." />
         <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
+        <Help text="Runs an AI check for unfair, discriminatory or potentially defamatory wording, and offers a safer rewrite you can apply with one click." />
         <button className="ghost" onClick={analyseDraft} disabled={Object.keys(content).length === 0}>Analyse draft</button>
+        <Help text="Scores the draft for risk (0–100) and maps the evidence to professional frameworks (PCF/KSS), so you can sense-check it before publishing." />
         {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
       </div>
       {draftScore && (

@@ -10,7 +10,10 @@ function Help({ text }) {
       <button type="button" className="help-btn" onClick={() => setOpen((o) => !o)} aria-label="Help">?</button>
       {open && (<>
         <div className="help-backdrop" onClick={() => setOpen(false)} />
-        <div className="help-pop">{text}</div>
+        <div className="help-pop">
+          <button type="button" className="help-close" onClick={() => setOpen(false)} aria-label="Close">×</button>
+          <span className="help-text" dangerouslySetInnerHTML={{ __html: text }} />
+        </div>
       </>)}
     </span>
   );
