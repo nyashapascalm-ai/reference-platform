@@ -49,7 +49,7 @@ export default function ResetPassword() {
         {!ready && (
           <>
             <p className="muted">Open this page from the reset link in your email. If you arrived another way or the link expired, request a fresh one from sign-in.</p>
-            <button className="ghost" onClick={() => router.push('/')}>Back to sign in</button>
+            <button className="ghost" onClick={() => router.push('/signin')}>Back to sign in</button>
           </>
         )}
         {ready && (

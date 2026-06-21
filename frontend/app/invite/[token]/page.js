@@ -34,7 +34,7 @@ export default function InvitePage() {
       <h1>You’ve been invited</h1>
       <div className="card">
         <p className="muted">Please sign in (or create an account) with the email this invite was sent to, then reopen this link to accept.</p>
-        <button onClick={() => router.push('/')}>Go to sign in</button>
+        <button onClick={() => router.push('/signin')}>Go to sign in</button>
       </div>
     </div>
   );

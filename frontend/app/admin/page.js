@@ -90,7 +90,7 @@ export default function AdminConsole() {
       <div className="brand" style={{ fontSize: 26 }}>Reffolio</div>
       <h2 style={{ marginTop: 12 }}>Admin console</h2>
       <p className="muted">You need to be signed in to view this page.</p>
-      <button onClick={() => router.push('/')}>Go to sign in</button>
+      <button onClick={() => router.push('/signin')}>Go to sign in</button>
     </div></div>
   );
   if (state === 'denied') return (

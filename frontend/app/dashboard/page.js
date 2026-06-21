@@ -39,7 +39,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) { router.push('/'); return; }
+      if (!data.session) { router.push('/signin'); return; }
       loadMe();
     });
   }, [router, loadMe]);
