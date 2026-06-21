@@ -56,12 +56,18 @@ async def current_user(authorization: str | None = Header(default=None)) -> dict
 async def require_org_actor(user: dict = Depends(current_user)) -> dict:
     async with db.pool().acquire() as c:
         row = await c.fetchrow(
-            "select id, org_id, role, is_locked from profiles where id = $1::uuid", user["user_id"]
+            "select p.id, p.org_id, p.role, p.is_locked, o.is_suspended, o.archived_at "
+            "from profiles p left join orgs o on o.id = p.org_id where p.id = $1::uuid",
+            user["user_id"],
         )
     if row is None or row["org_id"] is None or row["role"] == "worker":
         raise HTTPException(403, "not a member of any organisation")
     if row["is_locked"]:
         raise HTTPException(403, "your account has been locked by an administrator")
+    if row["is_suspended"]:
+        raise HTTPException(403, "your organisation's access has been suspended")
+    if row["archived_at"] is not None:
+        raise HTTPException(403, "your organisation is no longer active")
     return {"profile_id": row["id"], "org_id": row["org_id"], "role": row["role"], **user}
 
 

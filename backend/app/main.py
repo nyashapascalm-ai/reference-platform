@@ -366,12 +366,12 @@ async def admin_overview(user=Depends(require_super_admin)):
 
 
 @app.get("/admin/orgs")
-async def admin_orgs(user=Depends(require_super_admin)):
+async def admin_orgs(include_archived: bool = False, user=Depends(require_super_admin)):
     async with db.pool().acquire() as c:
         rows = await c.fetch(
             """
             select o.id, o.name, o.org_type::text as org_type, o.vertical::text as vertical,
-                   o.is_active, o.created_at,
+                   o.is_active, o.is_suspended, o.archived_at, o.created_at,
                    coalesce(b.plan, 'free') as plan,
                    coalesce(b.status, 'inactive') as status,
                    coalesce(b.seats, 2) as seats,
@@ -380,10 +380,157 @@ async def admin_orgs(user=Depends(require_super_admin)):
                    (select count(*) from "references" r where r.issuing_org_id = o.id) as refs
             from orgs o
             left join billing_customers b on b.org_id = o.id
+            where ($1 or o.archived_at is null)
+            order by o.created_at desc
+            """,
+            include_archived,
+        )
+    return {"orgs": [dict(r) for r in rows]}
+
+
+@app.get("/admin/analytics")
+async def admin_analytics(user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        active = await c.fetchval("select count(*) from billing_customers where status = 'active'")
+        canceled = await c.fetchval("select count(*) from billing_customers where status = 'canceled'")
+        past_due = await c.fetchval("select count(*) from billing_customers where status = 'past_due'")
+        suspended = await c.fetchval("select count(*) from orgs where is_suspended = true and archived_at is null")
+        archived = await c.fetchval("select count(*) from orgs where archived_at is not null")
+        growth = await c.fetchrow(
+            """
+            select count(*) filter (where created_at > now() - interval '7 days')  as d7,
+                   count(*) filter (where created_at > now() - interval '30 days') as d30,
+                   count(*) filter (where created_at > now() - interval '90 days') as d90
+            from orgs where archived_at is null
+            """
+        )
+        seats = await c.fetchrow(
+            """
+            select coalesce(sum(b.seats), 0) as subscribed,
+                   coalesce(sum((select count(*) from profiles p where p.org_id = b.org_id)), 0) as used
+            from billing_customers b where b.status = 'active'
+            """
+        )
+        cancels_30 = await c.fetchval(
+            "select count(distinct org_id) from billing_events "
+            "where status = 'canceled' and created_at > now() - interval '30 days'"
+        )
+    base = (active or 0) + (canceled or 0)
+    churn_rate = round((canceled or 0) / base, 4) if base else 0.0
+    sub = seats["subscribed"] or 0
+    used = seats["used"] or 0
+    return {
+        "subscriptions": {"active": active, "canceled": canceled, "past_due": past_due},
+        "lifecycle": {"suspended": suspended, "archived": archived},
+        "growth": {"new_7d": growth["d7"], "new_30d": growth["d30"], "new_90d": growth["d90"]},
+        "seats": {"subscribed": sub, "used": used,
+                  "utilisation": round(used / sub, 4) if sub else 0.0},
+        "churn": {"rate": churn_rate, "cancels_30d": cancels_30 or 0,
+                  "note": "Snapshot churn = cancelled \u00f7 (active + cancelled). Trended churn builds from now via billing events."},
+    }
+
+
+@app.get("/admin/report")
+async def admin_report(user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        rows = await c.fetch(
+            """
+            select o.id, o.name, o.org_type::text as org_type, o.vertical::text as vertical,
+                   o.created_at, o.is_suspended, o.archived_at,
+                   coalesce(b.plan, 'free') as plan, coalesce(b.status, 'inactive') as status,
+                   coalesce(b.seats, 0) as seats, b.current_period_end,
+                   (select count(*) from profiles p where p.org_id = o.id) as members,
+                   (select count(*) from "references" r where r.issuing_org_id = o.id) as refs,
+                   (select count(*) from "references" r where r.issuing_org_id = o.id and r.status = 'published') as published,
+                   (select max(created_at) from "references" r where r.issuing_org_id = o.id) as last_reference_at
+            from orgs o
+            left join billing_customers b on b.org_id = o.id
             order by o.created_at desc
             """
         )
-    return {"orgs": [dict(r) for r in rows]}
+    return {"rows": [dict(r) for r in rows], "generated_at": _now().isoformat()}
+
+
+@app.post("/admin/orgs/{org_id}/suspend")
+async def admin_suspend_org(org_id: UUID, user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow("update orgs set is_suspended = true where id = $1 returning id", org_id)
+    if not r:
+        raise HTTPException(404, "organisation not found")
+    return {"suspended": True}
+
+
+@app.post("/admin/orgs/{org_id}/unsuspend")
+async def admin_unsuspend_org(org_id: UUID, user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow("update orgs set is_suspended = false where id = $1 returning id", org_id)
+    if not r:
+        raise HTTPException(404, "organisation not found")
+    return {"suspended": False}
+
+
+@app.post("/admin/orgs/{org_id}/archive")
+async def admin_archive_org(org_id: UUID, user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow("update orgs set archived_at = now() where id = $1 returning id", org_id)
+    if not r:
+        raise HTTPException(404, "organisation not found")
+    return {"archived": True}
+
+
+@app.post("/admin/orgs/{org_id}/unarchive")
+async def admin_unarchive_org(org_id: UUID, user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow("update orgs set archived_at = null where id = $1 returning id", org_id)
+    if not r:
+        raise HTTPException(404, "organisation not found")
+    return {"archived": False}
+
+
+@app.post("/admin/orgs/{org_id}/cancel-subscription")
+async def admin_cancel_subscription(org_id: UUID, user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        b = await c.fetchrow("select stripe_subscription_id from billing_customers where org_id = $1", org_id)
+    stripe_done = False
+    sub_id = b["stripe_subscription_id"] if b else None
+    if sub_id and billing.configured():
+        try:
+            import stripe
+            billing._init()
+            stripe.Subscription.delete(sub_id)
+            stripe_done = True
+        except Exception as e:
+            app.state.last_admin_error = f"stripe cancel: {e}"
+    async with db.pool().acquire() as c:
+        await c.execute(
+            "update billing_customers set plan='free', status='canceled', updated_at=now() where org_id=$1",
+            org_id,
+        )
+        await c.execute("insert into billing_events (org_id, status, plan) values ($1, 'canceled', 'free')", org_id)
+    return {"canceled": True, "stripe_canceled": stripe_done}
+
+
+class ConfirmDelete(BaseModel):
+    confirm_name: str
+
+
+@app.delete("/admin/orgs/{org_id}")
+async def admin_delete_org(org_id: UUID, body: ConfirmDelete, user=Depends(require_super_admin)):
+    async with db.pool().acquire() as c:
+        org = await c.fetchrow("select name from orgs where id = $1", org_id)
+        if not org:
+            raise HTTPException(404, "organisation not found")
+        if (body.confirm_name or "").strip() != org["name"]:
+            raise HTTPException(400, "the name you typed does not match this organisation")
+        async with c.transaction():
+            await c.execute('delete from "references" where issuing_org_id = $1', org_id)
+            await c.execute("delete from org_invites where org_id = $1", org_id)
+            await c.execute("delete from billing_credits where org_id = $1", org_id)
+            await c.execute("delete from billing_customers where org_id = $1", org_id)
+            await c.execute("delete from billing_events where org_id = $1", org_id)
+            await c.execute("update profiles set org_id = null where org_id = $1", org_id)
+            await c.execute("delete from orgs where id = $1", org_id)
+    return {"deleted": True}
 
 
 @app.get("/me")

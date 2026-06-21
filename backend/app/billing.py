@@ -174,6 +174,11 @@ async def _apply_subscription(sub: dict, conn) -> None:
         "current_period_end=$6, updated_at=now() where stripe_customer_id=$1",
         cust, plan, status, seats, sub.get("id"), pe_ts,
     )
+    await conn.execute(
+        "insert into billing_events (org_id, status, plan) "
+        "select org_id, $2, $3 from billing_customers where stripe_customer_id=$1",
+        cust, status, plan,
+    )
 
 
 async def handle_event(event: dict, conn) -> None:
@@ -222,11 +227,21 @@ async def handle_event(event: dict, conn) -> None:
             "where stripe_customer_id=$1",
             cust, PLANS["free"]["seats"],
         )
+        await conn.execute(
+            "insert into billing_events (org_id, status, plan) "
+            "select org_id, 'canceled', 'free' from billing_customers where stripe_customer_id=$1",
+            cust,
+        )
 
     elif t == "invoice.payment_failed":
         cust = obj.get("customer")
         if cust:
             await conn.execute(
                 "update billing_customers set status='past_due', updated_at=now() where stripe_customer_id=$1",
+                cust,
+            )
+            await conn.execute(
+                "insert into billing_events (org_id, status, plan) "
+                "select org_id, 'past_due', plan from billing_customers where stripe_customer_id=$1",
                 cust,
             )
