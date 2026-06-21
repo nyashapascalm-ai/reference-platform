@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import ai, db, email, swe
+from . import ai, billing, db, email, swe
 from .auth import current_user, require_org_actor, require_worker
 from .hashing import content_hash, identity_hash, new_share_token, token_hash
 from .swe import check_registration
@@ -33,6 +33,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Reffolio API", version="0.3.0", lifespan=lifespan)
+
+
+async def require_org_admin(actor=Depends(require_org_actor)) -> dict:
+    if actor["role"] != "org_admin":
+        raise HTTPException(403, "this action requires an organisation admin")
+    return actor
+
+
 
 _origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 _wildcard = _origins == ["*"] or not _origins
@@ -134,6 +142,14 @@ class SweImportIn(BaseModel):
     csv: str
 
 
+class CheckoutIn(BaseModel):
+    plan: str
+
+
+class CreditsIn(BaseModel):
+    quantity: int = 100
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -194,6 +210,100 @@ async def swe_register_import(body: SweImportIn, x_import_token: str | None = He
                     r["number"], r["name"], r["status"], r["until"], r["town"],
                 )
     return {"imported": len(rows)}
+
+
+# ---- Billing ----
+_APP_URL = os.environ.get("PUBLIC_APP_URL", "https://reference-platform.vercel.app").rstrip("/")
+
+
+@app.get("/billing/me")
+async def billing_me(actor=Depends(require_org_actor)):
+    async with db.pool().acquire() as c:
+        row = await billing.get_billing(c, actor["org_id"])
+        bal = await billing.credits_balance(c, actor["org_id"])
+        used = await billing.seats_used(c, actor["org_id"])
+    return {
+        "plan": row["plan"],
+        "status": row["status"],
+        "seats": row["seats"],
+        "seats_used": used,
+        "credits": bal,
+        "features": billing.features(row["plan"]),
+        "current_period_end": row["current_period_end"].isoformat() if row["current_period_end"] else None,
+        "configured": billing.configured(),
+        "enforced": billing.enforce(),
+    }
+
+
+@app.post("/billing/checkout")
+async def billing_checkout(body: CheckoutIn, actor=Depends(require_org_admin)):
+    if not billing.configured():
+        raise HTTPException(503, "billing is not configured")
+    price = billing.plan_price(body.plan)
+    if not price:
+        raise HTTPException(400, "unknown or unpriced plan")
+    async with db.pool().acquire() as c:
+        org = await c.fetchrow("select name from orgs where id = $1", actor["org_id"])
+        customer = await billing.get_or_create_customer(c, actor["org_id"], org["name"], actor["email"])
+    url = billing.checkout_subscription(
+        customer, price,
+        f"{_APP_URL}/dashboard?billing=success",
+        f"{_APP_URL}/dashboard?billing=cancelled",
+        actor["org_id"],
+    )
+    return {"url": url}
+
+
+@app.post("/billing/credits/checkout")
+async def billing_credits_checkout(body: CreditsIn, actor=Depends(require_org_admin)):
+    if not billing.configured():
+        raise HTTPException(503, "billing is not configured")
+    price = os.environ.get("STRIPE_PRICE_CREDITS")
+    if not price:
+        raise HTTPException(400, "credit pricing is not configured")
+    qty = max(1, int(body.quantity))
+    async with db.pool().acquire() as c:
+        org = await c.fetchrow("select name from orgs where id = $1", actor["org_id"])
+        customer = await billing.get_or_create_customer(c, actor["org_id"], org["name"], actor["email"])
+    url = billing.checkout_credits(
+        customer, price, qty,
+        f"{_APP_URL}/dashboard?billing=credits",
+        f"{_APP_URL}/dashboard?billing=cancelled",
+        actor["org_id"],
+    )
+    return {"url": url}
+
+
+@app.post("/billing/portal")
+async def billing_portal(actor=Depends(require_org_admin)):
+    if not billing.configured():
+        raise HTTPException(503, "billing is not configured")
+    async with db.pool().acquire() as c:
+        row = await billing.get_billing(c, actor["org_id"])
+        if not row["stripe_customer_id"]:
+            org = await c.fetchrow("select name from orgs where id = $1", actor["org_id"])
+            cust = await billing.get_or_create_customer(c, actor["org_id"], org["name"], actor["email"])
+        else:
+            cust = row["stripe_customer_id"]
+    url = billing.billing_portal(cust, f"{_APP_URL}/dashboard")
+    return {"url": url}
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(503, "webhook is not configured")
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature")
+    try:
+        import stripe
+        event = stripe.Webhook.construct_event(payload, sig, secret)
+    except Exception:
+        raise HTTPException(400, "invalid signature")
+    async with db.pool().acquire() as c:
+        await billing.handle_event(event, c)
+    return {"received": True}
 
 
 @app.get("/me")
@@ -306,12 +416,6 @@ async def onboarding_org(body: OrgCreateIn, user=Depends(current_user)):
     return {"org_id": str(org["id"]), "role": "org_admin"}
 
 
-async def require_org_admin(actor=Depends(require_org_actor)) -> dict:
-    if actor["role"] != "org_admin":
-        raise HTTPException(403, "this action requires an organisation admin")
-    return actor
-
-
 _INVITE_ROLES = {"hiring_manager", "compliance_lead", "org_admin"}
 
 
@@ -321,6 +425,11 @@ async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
     email_in = body.email.strip()
     raw, thash = new_share_token()
     async with db.pool().acquire() as c:
+        if billing.enforce():
+            b = await billing.get_billing(c, actor["org_id"])
+            used = await billing.seats_used(c, actor["org_id"])
+            if used >= b["seats"]:
+                raise HTTPException(402, f"Your {b['plan']} plan includes {b['seats']} seats and they're all in use. Upgrade to add more.")
         org = await c.fetchrow("select name from orgs where id = $1", actor["org_id"])
         await c.execute(
             "insert into org_invites (org_id, email, role, token_hash, invited_by, expires_at) "
