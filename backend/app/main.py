@@ -143,7 +143,8 @@ class ConfirmIn(BaseModel):
 
 class InviteIn(BaseModel):
     email: str
-    role: str = "hiring_manager"
+    title: str | None = None
+    grant_admin: bool = False
 
 
 class SweImportIn(BaseModel):
@@ -500,7 +501,8 @@ _INVITE_ROLES = {"hiring_manager", "compliance_lead", "org_admin"}
 
 @app.post("/org/invites", status_code=201)
 async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
-    role = body.role if body.role in _INVITE_ROLES else "hiring_manager"
+    role = "org_admin" if body.grant_admin else "hiring_manager"
+    title = (body.title or "").strip() or None
     email_in = body.email.strip()
     raw, thash = new_share_token()
     async with db.pool().acquire() as c:
@@ -511,16 +513,18 @@ async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
                 raise HTTPException(402, f"Your {b['plan']} plan includes {b['seats']} seats and they're all in use. Upgrade to add more.")
         org = await c.fetchrow("select name from orgs where id = $1", actor["org_id"])
         await c.execute(
-            "insert into org_invites (org_id, email, role, token_hash, invited_by, expires_at) "
-            "values ($1, $2, $3::user_role_t, $4, $5::uuid, $6)",
-            actor["org_id"], email_in, role, thash, actor["user_id"], _now() + timedelta(days=14),
+            "insert into org_invites (org_id, email, role, title, token_hash, invited_by, expires_at) "
+            "values ($1, $2, $3::user_role_t, $4, $5, $6::uuid, $7)",
+            actor["org_id"], email_in, role, title, thash, actor["user_id"], _now() + timedelta(days=14),
         )
     base = os.environ.get("PUBLIC_APP_URL", "https://reference-platform.vercel.app").rstrip("/")
     link = f"{base}/invite/{raw}"
+    descriptor = title or ("an admin" if body.grant_admin else "a team member")
     sent = await email.send_email(
         email_in,
         f"You've been invited to {org['name']} on Reffolio",
-        f"<p>You've been invited to join <b>{org['name']}</b> as {role.replace('_', ' ')}.</p>"
+        f"<p>You've been invited to join <b>{org['name']}</b> as {descriptor}"
+        f"{' with admin access' if body.grant_admin else ''}.</p>"
         f"<p>Accept your invite:</p><p><a href='{link}'>{link}</a></p>"
         f"<p>Sign in (or create an account) with this email address to accept.</p>",
     )
@@ -531,11 +535,11 @@ async def create_invite(body: InviteIn, actor=Depends(require_org_admin)):
 async def list_members(actor=Depends(require_org_actor)):
     async with db.pool().acquire() as c:
         members = await c.fetch(
-            "select id, full_name, email, role from profiles where org_id = $1 order by role, full_name",
+            "select id, full_name, email, role, title from profiles where org_id = $1 order by role, full_name",
             actor["org_id"],
         )
         pending = await c.fetch(
-            "select id, email, role, created_at from org_invites "
+            "select id, email, role, title, created_at from org_invites "
             "where org_id = $1 and accepted_at is null and expires_at > now() order by created_at desc",
             actor["org_id"],
         )
@@ -603,7 +607,7 @@ async def invite_preview(token: str, user=Depends(current_user)):
 async def accept_invite(token: str, user=Depends(current_user)):
     async with db.pool().acquire() as c:
         inv = await c.fetchrow(
-            "select id, org_id, email, role, accepted_at, expires_at from org_invites where token_hash = $1",
+            "select id, org_id, email, role, title, accepted_at, expires_at from org_invites where token_hash = $1",
             token_hash(token),
         )
         if inv is None:
@@ -614,10 +618,10 @@ async def accept_invite(token: str, user=Depends(current_user)):
             raise HTTPException(403, "this invite was sent to a different email address")
         async with c.transaction():
             await c.execute(
-                "insert into profiles (id, org_id, role, full_name, email) "
-                "values ($1::uuid, $2, $3::user_role_t, $4, $5) "
-                "on conflict (id) do update set org_id = excluded.org_id, role = excluded.role",
-                user["user_id"], inv["org_id"], inv["role"],
+                "insert into profiles (id, org_id, role, title, full_name, email) "
+                "values ($1::uuid, $2, $3::user_role_t, $4, $5, $6) "
+                "on conflict (id) do update set org_id = excluded.org_id, role = excluded.role, title = excluded.title",
+                user["user_id"], inv["org_id"], inv["role"], inv["title"],
                 user.get("email") or "member", user.get("email") or "unknown@local",
             )
             if inv["accepted_at"] is None:

@@ -494,7 +494,7 @@ function WorkerPanel({ me }) {
 
 function TeamPanel({ me }) {
   const [data, setData] = useState({ members: [], pending_invites: [], is_admin: false, me: '' });
-  const [form, setForm] = useState({ email: '', role: 'hiring_manager' });
+  const [form, setForm] = useState({ email: '', title: '', grant_admin: false });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -508,7 +508,7 @@ function TeamPanel({ me }) {
     try {
       const r = await api('/org/invites', { method: 'POST', body: form });
       setMsg(r.sent ? 'Invite emailed.' : 'Invite created — email isn\u2019t configured, so share this link: ' + r.invite_link);
-      setForm({ email: '', role: 'hiring_manager' });
+      setForm({ email: '', title: '', grant_admin: false });
       load();
     } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
   }
@@ -524,13 +524,14 @@ function TeamPanel({ me }) {
   }
 
   const isAdmin = me.role === 'org_admin';
+  const titleOf = (x) => x.title || (x.role === 'org_admin' ? 'Admin' : 'Member');
   return (
     <div className="card">
-      <h2>Team <Help text="Everyone in your organisation. The admin holds the subscription and seats; invited managers and compliance leads can work but can't change billing or the team." /></h2>
+      <h2>Team <Help text="Everyone in your organisation. The admin holds the subscription and seats; members can work but can't change billing or the team. Job title is just a label." /></h2>
       {data.members.map((m) => (
         <div className="item" key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div>{m.full_name} <span className="badge">{(m.role || '').replace('_', ' ')}</span></div>
+            <div>{m.full_name} <span className="badge">{titleOf(m)}</span>{m.role === 'org_admin' && <span className="badge pub" style={{ marginLeft: 6 }}>admin</span>}</div>
             <div className="kv">{m.email}</div>
           </div>
           {isAdmin && m.id !== data.me && (
@@ -540,15 +541,26 @@ function TeamPanel({ me }) {
       ))}
       {isAdmin && (
         <div style={{ marginTop: 16 }}>
-          <h2>Invite a colleague <Help text="Send a seat to a colleague. They sign in with the invited email to join. Each active member or pending invite uses one seat on your plan." /></h2>
+          <h2>Invite a colleague <Help text="Send a seat to a colleague. They sign in with the invited email to join. Pick or type their job title, and tick admin only if they should manage billing and the team. Each member or pending invite uses one seat." /></h2>
           <label>Email</label>
           <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="colleague@yourcouncil.gov.uk" />
-          <label>Role</label>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="hiring_manager">Hiring manager</option>
-            <option value="compliance_lead">Compliance lead</option>
-            <option value="org_admin">Org admin</option>
-          </select>
+          <label>Job title (pick one or type your own)</label>
+          <input list="titlesuggest" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Team Manager" />
+          <datalist id="titlesuggest">
+            <option value="Social Worker" /><option value="Senior Social Worker" /><option value="Senior Practitioner" />
+            <option value="Team Manager" /><option value="Practice Manager" /><option value="Service Manager" />
+            <option value="Head of Service" /><option value="Principal Social Worker" /><option value="Independent Reviewing Officer" />
+            <option value="Practice Educator" /><option value="HR Manager" /><option value="Recruitment Manager" />
+            <option value="Compliance Officer" /><option value="Business Support Officer" />
+            <option value="Recruitment Consultant" /><option value="Senior Consultant" /><option value="Principal Consultant" />
+            <option value="Managing Consultant" /><option value="Account Manager" /><option value="Branch Manager" />
+            <option value="Team Leader" /><option value="Resourcing Lead" /><option value="Compliance Manager" />
+            <option value="Candidate Manager" /><option value="Registration Officer" /><option value="Director" />
+          </datalist>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none', letterSpacing: 0, fontSize: 13 }}>
+            <input type="checkbox" style={{ width: 'auto' }} checked={form.grant_admin} onChange={(e) => setForm({ ...form, grant_admin: e.target.checked })} />
+            Grant admin access (manage billing &amp; team)
+          </label>
           <button onClick={invite} disabled={busy}>Send invite</button>
           {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
           {data.pending_invites.length > 0 && (
@@ -556,7 +568,7 @@ function TeamPanel({ me }) {
               <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11 }}>Pending invites</div>
               {data.pending_invites.map((p) => (
                 <div className="item" key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="kv">{p.email} · {(p.role || '').replace('_', ' ')}</div>
+                  <div className="kv">{p.email} · {titleOf(p)}{p.role === 'org_admin' ? ' · admin' : ''}</div>
                   <button className="ghost" style={{ marginTop: 0 }} onClick={() => cancelInvite(p.id)}>Cancel</button>
                 </div>
               ))}
