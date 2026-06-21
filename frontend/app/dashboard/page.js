@@ -62,6 +62,7 @@ export default function Dashboard() {
       {!me?.org_id && !me?.worker_id && <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />}
       {me?.org_id && <OrgPanel me={me} />}
       {me?.org_id && <TeamPanel me={me} />}
+      {me?.org_id && <BillingPanel me={me} />}
       {me?.worker_id && <WorkerPanel me={me} />}
     </div>
   );
@@ -492,12 +493,12 @@ function WorkerPanel({ me }) {
 
 
 function TeamPanel({ me }) {
-  const [data, setData] = useState({ members: [], pending_invites: [] });
+  const [data, setData] = useState({ members: [], pending_invites: [], is_admin: false, me: '' });
   const [form, setForm] = useState({ email: '', role: 'hiring_manager' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try { setData(await api('/org/members')); } catch (e) { /* non-admins may still load members */ }
+    try { setData(await api('/org/members')); } catch (e) { /* ignore */ }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -511,20 +512,35 @@ function TeamPanel({ me }) {
       load();
     } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
   }
+  async function removeMember(id) {
+    setMsg(''); setErr(false);
+    try { await api(`/org/members/${id}`, { method: 'DELETE' }); load(); }
+    catch (e) { setErr(true); setMsg(e.message); }
+  }
+  async function cancelInvite(id) {
+    setMsg(''); setErr(false);
+    try { await api(`/org/invites/${id}`, { method: 'DELETE' }); load(); }
+    catch (e) { setErr(true); setMsg(e.message); }
+  }
 
   const isAdmin = me.role === 'org_admin';
   return (
     <div className="card">
-      <h2>Team</h2>
-      {data.members.map((m, i) => (
-        <div className="item" key={i}>
-          <div>{m.full_name} <span className="badge">{(m.role || '').replace('_', ' ')}</span></div>
-          <div className="kv">{m.email}</div>
+      <h2>Team <Help text="Everyone in your organisation. The admin holds the subscription and seats; invited managers and compliance leads can work but can't change billing or the team." /></h2>
+      {data.members.map((m) => (
+        <div className="item" key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div>{m.full_name} <span className="badge">{(m.role || '').replace('_', ' ')}</span></div>
+            <div className="kv">{m.email}</div>
+          </div>
+          {isAdmin && m.id !== data.me && (
+            <button className="ghost" style={{ marginTop: 0 }} onClick={() => removeMember(m.id)}>Remove</button>
+          )}
         </div>
       ))}
       {isAdmin && (
         <div style={{ marginTop: 16 }}>
-          <h2>Invite a colleague</h2>
+          <h2>Invite a colleague <Help text="Send a seat to a colleague. They sign in with the invited email to join. Each active member or pending invite uses one seat on your plan." /></h2>
           <label>Email</label>
           <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="colleague@yourcouncil.gov.uk" />
           <label>Role</label>
@@ -536,14 +552,66 @@ function TeamPanel({ me }) {
           <button onClick={invite} disabled={busy}>Send invite</button>
           {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
           {data.pending_invites.length > 0 && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 14 }}>
               <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11 }}>Pending invites</div>
-              {data.pending_invites.map((p, i) => (
-                <div className="kv" key={i}>{p.email} · {(p.role || '').replace('_', ' ')}</div>
+              {data.pending_invites.map((p) => (
+                <div className="item" key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="kv">{p.email} · {(p.role || '').replace('_', ' ')}</div>
+                  <button className="ghost" style={{ marginTop: 0 }} onClick={() => cancelInvite(p.id)}>Cancel</button>
+                </div>
               ))}
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function BillingPanel({ me }) {
+  const [b, setB] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
+  const isAdmin = me.role === 'org_admin';
+
+  const load = useCallback(async () => {
+    try { setB(await api('/billing/me')); } catch (e) { /* ignore */ }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function go(path, body, key) {
+    setBusy(key); setMsg(''); setErr(false);
+    try { const r = await api(path, { method: 'POST', body }); if (r.url) window.location.href = r.url; else { setBusy(''); load(); } }
+    catch (e) { setErr(true); setMsg(e.message); setBusy(''); }
+  }
+
+  if (!b) return null;
+  const f = b.features || {};
+  return (
+    <div className="card">
+      <h2>Billing &amp; plan <Help text="Your subscription. The admin manages the plan and seats centrally; charges are billed to the organisation. Upgrading adds seats and features." /></h2>
+      <div className="kv">Plan: <b style={{ color: 'var(--text)' }}>{f.label || b.plan}</b> · {b.status}</div>
+      <div className="kv">Seats: {b.seats_used} of {b.seats} used</div>
+      <div className="kv">Pay-as-you-go credits: {b.credits}</div>
+      {b.current_period_end && <div className="kv">Renews: {new Date(b.current_period_end).toLocaleDateString()}</div>}
+
+      {!isAdmin && <div className="kv" style={{ marginTop: 10 }}>Billing is managed by your organisation admin.</div>}
+
+      {isAdmin && (
+        <>
+          {!b.configured && <div className="msg">Billing isn\u2019t fully configured yet.</div>}
+          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, marginTop: 14 }}>Change plan</div>
+          <div className="row" style={{ marginTop: 6 }}>
+            <button onClick={() => go('/billing/checkout', { plan: 'starter' }, 's')} disabled={!!busy}>Starter · £49</button>
+            <button onClick={() => go('/billing/checkout', { plan: 'growth' }, 'g')} disabled={!!busy}>Growth · £149</button>
+            <button onClick={() => go('/billing/checkout', { plan: 'business' }, 'b')} disabled={!!busy}>Business · £299</button>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="ghost" onClick={() => go('/billing/credits/checkout', { quantity: 10 }, 'c')} disabled={!!busy}>Buy 10 credits</button>
+            <button className="ghost" onClick={() => go('/billing/portal', {}, 'p')} disabled={!!busy}>Manage subscription</button>
+          </div>
+          {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
+        </>
       )}
     </div>
   );
