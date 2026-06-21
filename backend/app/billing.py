@@ -7,6 +7,7 @@ truth for subscription state; we mirror it into billing_customers via webhooks.
 Degrades gracefully: if STRIPE_SECRET_KEY isn't set, checkout/portal raise a
 clear error but the rest of the app (and the free tier) keep working.
 """
+import json
 import os
 from datetime import datetime, timezone
 
@@ -131,6 +132,19 @@ def billing_portal(customer_id, return_url) -> str:
 
 
 # ---- Webhook handling (async; takes parsed event + connection) ----
+def _as_dict(obj):
+    """Stripe SDK returns StripeObject (dict-like but with quirky attribute
+    access and no recursive dict export in some versions). Its __str__ emits
+    deep JSON, so round-trip through that to get a plain nested dict. Plain
+    dicts pass through unchanged."""
+    if obj is None:
+        return None
+    try:
+        return json.loads(str(obj))
+    except Exception:
+        return obj
+
+
 def _sub_price_and_period(sub: dict):
     """Extract price id and current_period_end across Stripe API versions.
     In newer versions current_period_end moved onto subscription items."""
@@ -180,7 +194,7 @@ async def handle_event(event: dict, conn) -> None:
             if isinstance(sub, str) and configured():
                 try:
                     _init()
-                    sub = stripe.Subscription.retrieve(sub)
+                    sub = _as_dict(stripe.Subscription.retrieve(sub))
                 except Exception:
                     sub = None
             if isinstance(sub, dict):
@@ -193,7 +207,7 @@ async def handle_event(event: dict, conn) -> None:
         if not price and obj.get("id") and configured():
             try:
                 _init()
-                sub = stripe.Subscription.retrieve(obj["id"])
+                sub = _as_dict(stripe.Subscription.retrieve(obj["id"]))
             except Exception:
                 sub = obj
         await _apply_subscription(sub, conn)

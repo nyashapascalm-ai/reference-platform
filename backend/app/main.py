@@ -9,6 +9,7 @@ Identity now comes from the verified Supabase login token, not from headers.
   POST /grants                  worker mints the £5 consent link (raw token once)
   GET  /share/{token}           public, token-gated read of the source record (audited)
 """
+import json
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -298,12 +299,29 @@ async def stripe_webhook(request: Request):
     sig = request.headers.get("stripe-signature")
     try:
         import stripe
-        event = stripe.Webhook.construct_event(payload, sig, secret)
+        stripe.Webhook.construct_event(payload, sig, secret)  # verifies signature (raises if invalid)
     except Exception:
         raise HTTPException(400, "invalid signature")
-    async with db.pool().acquire() as c:
-        await billing.handle_event(event, c)
-    return {"received": True}
+    try:
+        event = json.loads(payload.decode("utf-8"))  # plain dict, version-agnostic
+    except Exception:
+        raise HTTPException(400, "invalid payload")
+    try:
+        async with db.pool().acquire() as c:
+            await billing.handle_event(event, c)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        app.state.last_webhook_error = {"type": event.get("type"), "error": f"{e.__class__.__name__}: {e}", "trace": tb[-1500:]}
+        print("WEBHOOK_ERROR", event.get("type"), tb, flush=True)
+        # return 200 so Stripe stops retrying a poison event; we've logged it
+        return {"received": True, "handled": False}
+    return {"received": True, "handled": True}
+
+
+@app.get("/billing/_debug")
+async def billing_debug(actor=Depends(require_org_admin)):
+    return getattr(app.state, "last_webhook_error", {"error": None})
 
 
 @app.get("/me")
