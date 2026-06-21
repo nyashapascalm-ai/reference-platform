@@ -583,6 +583,119 @@ async def remove_member(profile_id: UUID, actor=Depends(require_org_admin)):
     return {"removed": True}
 
 
+@app.post("/org/members/{profile_id}/lock")
+async def lock_member(profile_id: UUID, actor=Depends(require_org_admin)):
+    if str(profile_id) == str(actor["user_id"]):
+        raise HTTPException(400, "you can't lock yourself")
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow(
+            "update profiles set is_locked = true where id = $1 and org_id = $2 returning id",
+            profile_id, actor["org_id"],
+        )
+    if not r:
+        raise HTTPException(404, "member not found")
+    return {"locked": True}
+
+
+@app.post("/org/members/{profile_id}/unlock")
+async def unlock_member(profile_id: UUID, actor=Depends(require_org_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow(
+            "update profiles set is_locked = false where id = $1 and org_id = $2 returning id",
+            profile_id, actor["org_id"],
+        )
+    if not r:
+        raise HTTPException(404, "member not found")
+    return {"locked": False}
+
+
+@app.post("/org/references/{reference_id}/freeze")
+async def freeze_reference(reference_id: UUID, actor=Depends(require_org_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow(
+            'update "references" set frozen_at = now() where id = $1 and issuing_org_id = $2 returning id',
+            reference_id, actor["org_id"],
+        )
+    if not r:
+        raise HTTPException(404, "reference not found")
+    return {"frozen": True}
+
+
+@app.post("/org/references/{reference_id}/unfreeze")
+async def unfreeze_reference(reference_id: UUID, actor=Depends(require_org_admin)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow(
+            'update "references" set frozen_at = null where id = $1 and issuing_org_id = $2 returning id',
+            reference_id, actor["org_id"],
+        )
+    if not r:
+        raise HTTPException(404, "reference not found")
+    return {"frozen": False}
+
+
+@app.get("/org/activity")
+async def org_activity(actor=Depends(require_org_admin)):
+    async with db.pool().acquire() as c:
+        members = await c.fetch(
+            """
+            select p.id, p.full_name, p.email, p.title, p.role, p.is_locked,
+                   count(r.id) filter (where r.id is not null) as total,
+                   count(r.id) filter (where r.status = 'draft') as drafts,
+                   count(r.id) filter (where r.status = 'published') as published,
+                   max(r.created_at) as last_active
+            from profiles p
+            left join "references" r on r.created_by = p.id and r.issuing_org_id = p.org_id
+            where p.org_id = $1
+            group by p.id, p.full_name, p.email, p.title, p.role, p.is_locked
+            order by published desc nulls last, p.full_name
+            """,
+            actor["org_id"],
+        )
+        totals = await c.fetchrow(
+            """
+            select count(*) as total,
+                   count(*) filter (where status = 'published') as published,
+                   count(*) filter (where status = 'draft') as drafts,
+                   count(*) filter (where frozen_at is not null) as frozen
+            from "references" where issuing_org_id = $1
+            """,
+            actor["org_id"],
+        )
+        opens = await c.fetchval(
+            'select count(*) from access_log al join "references" r on r.id = al.reference_id '
+            "where r.issuing_org_id = $1",
+            actor["org_id"],
+        )
+    return {
+        "members": [dict(m) for m in members],
+        "totals": {**dict(totals), "total_opens": int(opens or 0)},
+    }
+
+
+@app.get("/org/records")
+async def org_records(actor=Depends(require_org_admin)):
+    async with db.pool().acquire() as c:
+        rows = await c.fetch(
+            """
+            select r.id, r.status, r.assignment_context, r.content_hash, r.risk_score,
+                   r.ai_summary, r.published_at, r.created_at, r.frozen_at,
+                   w.full_name as worker_name,
+                   cre.full_name as author_name,
+                   coalesce(a.opens, 0) as opens, a.last_opened,
+                   exists(select 1 from referees rf where rf.reference_id = r.id and rf.confirmed_at is not null) as referee_confirmed
+            from "references" r
+            join workers w on w.id = r.worker_id
+            left join profiles cre on cre.id = r.created_by
+            left join (select reference_id, count(*) as opens, max(accessed_at) as last_opened
+                       from access_log group by reference_id) a on a.reference_id = r.id
+            where r.issuing_org_id = $1
+            order by r.created_at desc
+            """,
+            actor["org_id"],
+        )
+    return {"records": [dict(r) for r in rows]}
+
+
 @app.get("/invite/{token}")
 async def invite_preview(token: str, user=Depends(current_user)):
     async with db.pool().acquire() as c:
@@ -683,11 +796,11 @@ async def references_create(body: ReferenceCreateIn, actor=Depends(require_org_a
         async with c.transaction():
             ref = await c.fetchrow(
                 """
-                insert into "references" (worker_id, issuing_org_id, template_id, assignment_context, content)
-                values ($1, $2, $3, $4, $5)
+                insert into "references" (worker_id, issuing_org_id, template_id, assignment_context, content, created_by)
+                values ($1, $2, $3, $4, $5, $6::uuid)
                 returning id, status
                 """,
-                body.worker_id, org_id, body.template_id, body.assignment_context, body.content,
+                body.worker_id, org_id, body.template_id, body.assignment_context, body.content, actor["user_id"],
             )
             referee_out = None
             if body.referee is not None:
@@ -857,6 +970,9 @@ async def _validate_grant(c, share_token: str):
         raise HTTPException(403, "this share link has been revoked")
     if grant["expires_at"] <= _now():
         raise HTTPException(403, "this share link has expired")
+    frozen = await c.fetchval('select frozen_at from "references" where id = $1', grant["reference_id"])
+    if frozen is not None:
+        raise HTTPException(403, "this reference is under review and temporarily unavailable")
     return grant
 
 
