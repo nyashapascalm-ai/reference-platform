@@ -18,6 +18,7 @@ export default function MarketingFooter() {
             <Link href="/#how">How it works</Link>
             <Link href="/#why">Why Reffolio</Link>
             <Link href="/pricing">Pricing</Link>
+            <Link href="/download">Desktop app</Link>
           </div>
           <div>
             <h4>Company</h4>
