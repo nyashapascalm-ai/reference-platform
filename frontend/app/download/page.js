@@ -5,8 +5,8 @@ import '../marketing.css';
 import MarketingNav from '../../components/MarketingNav';
 import MarketingFooter from '../../components/MarketingFooter';
 
-const WIN_URL = 'https://github.com/nyashapascalm-ai/reffolio-desktop/releases/download/v1.0.0/Reffolio_1.0.0_x64-setup.exe';
-const MAC_URL = 'https://github.com/nyashapascalm-ai/reffolio-desktop/releases/download/v1.0.0/Reffolio_1.0.0_universal.dmg';
+const WIN_URL = 'https://github.com/nyashapascalm-ai/reffolio-desktop/releases/download/v1.0.1/Reffolio_1.0.1_x64-setup.exe';
+const MAC_URL = 'https://github.com/nyashapascalm-ai/reffolio-desktop/releases/download/v1.0.1/Reffolio_1.0.1_universal.dmg';
 const RELEASES_URL = 'https://github.com/nyashapascalm-ai/reffolio-desktop/releases';
 
 export default function Download() {
