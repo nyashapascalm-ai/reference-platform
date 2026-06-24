@@ -217,7 +217,7 @@ function OrgPanel({ me }) {
   function applyRewrite() { if (flags?.rewritten) { setContent({ ...content, ...flags.rewritten }); setFlags(null); setAiMsg('Rewrite applied.'); } }
   async function analyseDraft() {
     setAiMsg('Analysing draft…'); setErr(false); setDraftScore(null);
-    try { const r = await api('/ai/analyse', { method: 'POST', body: { content, assignment_context: meta.assignment_context } }); setDraftScore(r); setAiMsg(''); }
+    try { const r = await api('/ai/analyse', { method: 'POST', body: { content, assignment_context: meta.assignment_context, vertical: tpl?.vertical } }); setDraftScore(r); setAiMsg(''); }
     catch (e) { setErr(true); setAiMsg(e.message); }
   }
   async function analyse(id) {
@@ -302,7 +302,7 @@ function OrgPanel({ me }) {
         <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
         <Help text="Runs an AI check for unfair, discriminatory or potentially defamatory wording, and offers a safer rewrite you can apply with one click." />
         <button className="ghost" onClick={analyseDraft} disabled={Object.keys(content).length === 0}>Analyse draft</button>
-        <Help text="Scores the draft for risk (0–100) and maps the evidence to professional frameworks (PCF/KSS), so you can sense-check it before publishing." />
+        <Help text="Scores the draft for risk (0–100) and maps the evidence to the professional framework for the selected template’s sector, so you can sense-check it before publishing." />
         {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
       </div>
       {draftScore && (

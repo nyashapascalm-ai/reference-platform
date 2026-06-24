@@ -113,6 +113,7 @@ class AiCheckIn(BaseModel):
 class AiAnalyseIn(BaseModel):
     content: dict
     assignment_context: str | None = None
+    vertical: str | None = None
 
 
 class ShareMessageIn(BaseModel):
@@ -1000,7 +1001,7 @@ async def references_publish(reference_id: UUID, actor=Depends(require_org_actor
         if ref["status"] == "published":
             raise HTTPException(409, "reference already published")
 
-        tmpl = await c.fetchrow("select field_schema from reference_templates where id = $1", ref["template_id"])
+        tmpl = await c.fetchrow("select field_schema, vertical from reference_templates where id = $1", ref["template_id"])
         required = (tmpl["field_schema"] or {}).get("required", []) if tmpl else []
         content = ref["content"] or {}
         missing = [f for f in required if not content.get(f)]
@@ -1015,7 +1016,7 @@ async def references_publish(reference_id: UUID, actor=Depends(require_org_actor
         # best-effort: attach an AI assessment so the share page can show it.
         # Never block publishing if the AI is unavailable (no key / no credit / error).
         try:
-            result = await ai.synthesise(content, None)
+            result = await ai.synthesise(content, None, tmpl["vertical"] if tmpl else None)
             await c.execute(
                 'update "references" set competency_map=$2, risk_score=$3, ai_summary=$4 where id=$1',
                 reference_id, result["competency_map"], result["risk_score"], result["summary"],
@@ -1059,12 +1060,12 @@ async def grants_mint(body: GrantMintIn, worker=Depends(require_worker)):
 @app.post("/ai/draft")
 async def ai_draft(body: AiDraftIn, actor=Depends(require_org_actor)):
     async with db.pool().acquire() as c:
-        tmpl = await c.fetchrow("select field_schema from reference_templates where id = $1", body.template_id)
+        tmpl = await c.fetchrow("select field_schema, vertical from reference_templates where id = $1", body.template_id)
     if tmpl is None:
         raise HTTPException(404, "template not found")
     required = (tmpl["field_schema"] or {}).get("required", [])
     try:
-        content = await ai.draft_reference(body.notes, required)
+        content = await ai.draft_reference(body.notes, required, tmpl["vertical"] if tmpl else None)
     except Exception as e:
         raise HTTPException(502, f"AI drafting failed: {e}")
     return {"content": content}
@@ -1082,7 +1083,7 @@ async def ai_check(body: AiCheckIn, actor=Depends(require_org_actor)):
 async def ai_analyse(body: AiAnalyseIn, actor=Depends(require_org_actor)):
     """Analyse live draft content without saving — lets the issuer iterate pre-publish."""
     try:
-        return await ai.synthesise(body.content, body.assignment_context)
+        return await ai.synthesise(body.content, body.assignment_context, body.vertical)
     except Exception as e:
         raise HTTPException(502, f"AI analysis failed: {e}")
 
@@ -1107,7 +1108,9 @@ async def ai_share_message(body: ShareMessageIn, user=Depends(current_user)):
 async def references_analyse(reference_id: UUID, actor=Depends(require_org_actor)):
     async with db.pool().acquire() as c:
         ref = await c.fetchrow(
-            'select issuing_org_id, content, assignment_context from "references" where id = $1',
+            'select r.issuing_org_id, r.content, r.assignment_context, t.vertical '
+            'from "references" r left join reference_templates t on t.id = r.template_id '
+            'where r.id = $1',
             reference_id,
         )
         if ref is None:
@@ -1115,7 +1118,7 @@ async def references_analyse(reference_id: UUID, actor=Depends(require_org_actor
         if ref["issuing_org_id"] != actor["org_id"]:
             raise HTTPException(403, "only the issuing org may analyse this reference")
         try:
-            result = await ai.synthesise(ref["content"] or {}, ref["assignment_context"])
+            result = await ai.synthesise(ref["content"] or {}, ref["assignment_context"], ref["vertical"])
         except Exception as e:
             raise HTTPException(502, f"AI analysis failed: {e}")
         await c.execute(

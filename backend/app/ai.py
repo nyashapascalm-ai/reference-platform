@@ -2,11 +2,17 @@
 
   draft_reference  rough manager notes      -> structured, template-compliant content
   check_reference  a drafted reference      -> fairness / defamation flags + safe rewrite
-  synthesise       a published reference     -> PCF/KSS competency map, risk score, summary
+  synthesise       a published reference     -> competency map, risk score, summary
 
-Each function asks Claude for STRICT JSON and parses it defensively. The model is
-overridable with ANTHROPIC_MODEL; the API key comes from ANTHROPIC_API_KEY.
-`_complete` is module-level so it can be patched in tests without network access.
+All assessment is VERTICAL-AWARE: the framework used to assess a reference is
+chosen from the worker's sector (social_work -> PCF/KSS, care -> CQC fit-person
+& safeguarding of adults, healthcare -> NMC/HCPC, teaching -> Teachers' Standards
+& KCSIE), with a sensible generic fallback. A care reference is never assessed
+against children's social-work standards.
+
+The model is overridable with ANTHROPIC_MODEL; the API key comes from
+ANTHROPIC_API_KEY. `_complete` is module-level so it can be patched in tests
+without network access.
 """
 import json
 import os
@@ -15,6 +21,67 @@ from anthropic import AsyncAnthropic
 
 _client: AsyncAnthropic | None = None
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+
+# --- per-vertical assessment profiles -------------------------------------
+# Each entry: the sector label, the drafting register, the assessment
+# framework, and the JSON keys the competency map should use.
+_PROFILES = {
+    "social_work": {
+        "sector": "UK children's and adults' social work",
+        "draft_role": "UK social-work employment references",
+        "framework": (
+            "the Professional Capabilities Framework (PCF) and the "
+            "Knowledge & Skills Statements (KSS)"
+        ),
+        "map_keys": '{ "PCF": [..], "KSS": [..] }',
+    },
+    "care": {
+        "sector": "UK adult social care (CQC-regulated care & support work)",
+        "draft_role": "UK adult social care employment references",
+        "framework": (
+            "CQC fit-and-proper-person expectations: suitability to work with "
+            "vulnerable adults, safeguarding, reliability and conduct, and the "
+            "Care Certificate standards where relevant. Do NOT use children's "
+            "social-work frameworks (PCF/KSS) for care-worker references"
+        ),
+        "map_keys": '{ "Suitability": [..], "Safeguarding": [..], "Conduct": [..] }',
+    },
+    "healthcare": {
+        "sector": "UK healthcare (nursing / allied health professions)",
+        "draft_role": "UK healthcare employment references",
+        "framework": (
+            "the relevant professional regulator's standards (NMC Code for "
+            "nursing, HCPC standards for allied health professions), patient "
+            "safety, safeguarding, and fitness to practise"
+        ),
+        "map_keys": '{ "Standards": [..], "Safeguarding": [..], "Conduct": [..] }',
+    },
+    "teaching": {
+        "sector": "UK education (teaching and school staff)",
+        "draft_role": "UK education employment references",
+        "framework": (
+            "the Teachers' Standards and Keeping Children Safe in Education "
+            "(KCSIE): suitability to work with children, safeguarding, and "
+            "professional conduct"
+        ),
+        "map_keys": '{ "Standards": [..], "Safeguarding": [..], "Conduct": [..] }',
+    },
+}
+
+_GENERIC = {
+    "sector": "UK regulated employment",
+    "draft_role": "UK employment references",
+    "framework": (
+        "general suitability for the role, safeguarding where relevant, "
+        "reliability and professional conduct"
+    ),
+    "map_keys": '{ "Suitability": [..], "Conduct": [..] }',
+}
+
+
+def _profile(vertical: str | None) -> dict:
+    return _PROFILES.get((vertical or "").strip().lower(), _GENERIC)
 
 
 def _client_or_init() -> AsyncAnthropic:
@@ -48,9 +115,10 @@ def _extract_json(text: str):
         raise
 
 
-async def draft_reference(notes: str, required_fields: list[str]) -> dict:
+async def draft_reference(notes: str, required_fields: list[str], vertical: str | None = None) -> dict:
+    p = _profile(vertical)
     system = (
-        "You write UK social-work employment references. Produce only factual, "
+        f"You write {p['draft_role']}. Produce only factual, "
         "evidence-based, fair language. Avoid opinion presented as fact, avoid any "
         "discriminatory content, and never invent specifics not supported by the notes. "
         "Return STRICT JSON only — an object whose keys are exactly the requested fields, "
@@ -66,7 +134,7 @@ async def draft_reference(notes: str, required_fields: list[str]) -> dict:
     return {k: str(obj.get(k, "")) for k in required_fields}
 
 
-async def check_reference(content: dict) -> dict:
+async def check_reference(content: dict, vertical: str | None = None) -> dict:
     system = (
         "You are a compliance reviewer for UK employment references. Check the reference "
         "for: discriminatory language, unevidenced opinion stated as fact, and defamation / "
@@ -85,16 +153,19 @@ async def check_reference(content: dict) -> dict:
     }
 
 
-async def synthesise(content: dict, assignment_context: str | None = None) -> dict:
+async def synthesise(content: dict, assignment_context: str | None = None, vertical: str | None = None) -> dict:
+    p = _profile(vertical)
     system = (
-        "You assess UK children's social-work references. Map the evidence to the "
-        "Professional Capabilities Framework (PCF) and the Knowledge & Skills Statements (KSS). "
+        f"You assess references for {p['sector']}. Assess the evidence against "
+        f"{p['framework']}. Judge the reference ONLY against the standards for its own "
+        "sector and role — never contrast it against a different profession's framework. "
         "Return STRICT JSON only: "
-        '{"competency_map": { "PCF": [..], "KSS": [..] }, '
+        '{"competency_map": ' + p["map_keys"] + ", "
         '"risk_score": number 0-100 (0 = no concern, 100 = serious concern), '
         '"summary": one plain-English paragraph }. No markdown.'
     )
     user = (
+        f"Sector: {p['sector']}\n"
         f"Assignment context: {assignment_context or 'n/a'}\n"
         f"Reference content (JSON):\n{json.dumps(content)}"
     )
