@@ -165,7 +165,7 @@ function RegisterWorker({ onDone }) {
     return (
       <div className="card">
         <h2>Registration check</h2>
-        <div className="kv">Status: {st === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the SWE register ✓</span> : st === 'failed' ? 'Not found on the SWE register' : 'Pending — manual verification'}</div>
+        <div className="kv">Status: {st === 'verified' ? <span style={{ color: 'var(--accent)' }}>Verified on the register ✓</span> : st === 'failed' ? 'Not found on the register' : st === 'not_applicable' ? 'Identity-based (no professional register for this role)' : 'Pending — manual verification'}</div>
         {reg.registered_name && <div className="kv">Register name: {reg.registered_name}</div>}
         {reg.registered_until && <div className="kv">Registered until: {reg.registered_until}</div>}
         {reg.detail && <div className="kv">{reg.detail}</div>}
@@ -178,12 +178,15 @@ function RegisterWorker({ onDone }) {
       <h2>Register as a worker</h2>
       <label>Full name</label><input value={f.full_name} onChange={up('full_name')} />
       <label>Registration body</label>
-      <select value={f.registration_body} onChange={up('registration_body')}>
+      <select value={f.registration_body} onChange={(e) => setF({ ...f, registration_body: e.target.value, vertical: e.target.value === 'none' ? 'care' : f.vertical })}>
         <option value="swe">Social Work England (SWE)</option>
         <option value="nmc">NMC</option><option value="gmc">GMC</option>
         <option value="hcpc">HCPC</option><option value="trn">TRN</option>
+        <option value="none">Not on a professional register (e.g. care worker)</option>
       </select>
-      <label>Registration number</label><input value={f.registration_number} onChange={up('registration_number')} placeholder="SW123456" />
+      {f.registration_body !== 'none'
+        ? (<><label>Registration number</label><input value={f.registration_number} onChange={up('registration_number')} placeholder="SW123456" /></>)
+        : (<div className="kv" style={{ margin: '6px 0' }}>No register number needed. Identity is bound to the DBS number (if given) and confirmed by the referee.</div>)}
       <label>DBS certificate number (optional)</label><input value={f.dbs_certificate_number} onChange={up('dbs_certificate_number')} />
       <button onClick={submit} disabled={busy}>Verify & register</button>
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
@@ -225,7 +228,7 @@ function OrgPanel({ me }) {
 
   const load = useCallback(async () => {
     try {
-      const t = await api('/templates?vertical=social_work', { auth: false });
+      const t = await api('/templates', { auth: false });
       setTemplates(t); if (t[0]) setTpl(t[0]);
       const r = await api('/me/references'); setRefs(r.as_org || []);
     } catch (e) { setErr(true); setMsg(e.message); }
@@ -278,10 +281,15 @@ function OrgPanel({ me }) {
       <button className="ghost" onClick={aiDraft} disabled={!tpl || !notes}>Draft with AI</button>
       <label>Assignment context <Help text="The role or setting this reference relates to — e.g. the team, service or placement the worker was in (such as 'Children & Families team'). It gives the reader context for the reference." /></label>
       <input value={meta.assignment_context} onChange={up('assignment_context')} placeholder="Children & Families team" />
-      {required.map((field) => (
-        <div key={field}>
-          <label>{field}</label>
-          <input value={content[field] || ''} onChange={upc(field)} />
+      {(tpl?.field_schema?.fields && tpl.field_schema.fields.length
+        ? tpl.field_schema.fields
+        : required.map((k) => ({ key: k, label: k, type: 'text' }))
+      ).map((fld) => (
+        <div key={fld.key}>
+          <label>{fld.label}{required.includes(fld.key) ? ' *' : ''}</label>
+          {fld.type === 'textarea'
+            ? <textarea rows={3} value={content[fld.key] || ''} onChange={upc(fld.key)} />
+            : <input value={content[fld.key] || ''} onChange={upc(fld.key)} />}
         </div>
       ))}
       <label>Referee name</label><input value={meta.ref_name} onChange={up('ref_name')} />

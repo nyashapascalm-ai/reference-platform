@@ -76,7 +76,7 @@ class WorkerVerifyIn(BaseModel):
     full_name: str
     vertical: str
     registration_body: str
-    registration_number: str
+    registration_number: str | None = None
     dbs_certificate_number: str | None = None
 
 
@@ -894,8 +894,24 @@ async def accept_invite(token: str, user=Depends(current_user)):
 
 @app.post("/workers/verify", status_code=201)
 async def workers_verify(body: WorkerVerifyIn, user=Depends(current_user)):
-    check = await check_registration(body.registration_body, body.registration_number)
-    idhash = identity_hash(body.registration_body, body.registration_number, body.dbs_certificate_number)
+    no_register = (body.registration_body or "").strip().lower() in ("none", "self", "")
+    if no_register:
+        reg_body = "none"
+        # NOT NULL + unique(registration_body, registration_number):
+        # user_id is unique per worker, so it is a safe synthetic key here.
+        reg_number = str(user["user_id"])
+        check = {
+            "status": "not_applicable",
+            "checked_at": _now(),
+            "detail": "Role is not on a professional register; identity-based verification.",
+        }
+    else:
+        reg_body = body.registration_body
+        if not body.registration_number:
+            raise HTTPException(422, "registration_number is required for this registration body")
+        reg_number = body.registration_number
+        check = await check_registration(reg_body, reg_number)
+    idhash = identity_hash(reg_body, reg_number, body.dbs_certificate_number)
     async with db.pool().acquire() as c:
         try:
             async with c.transaction():
@@ -916,8 +932,8 @@ async def workers_verify(body: WorkerVerifyIn, user=Depends(current_user)):
                             $6::verification_status_t, $7, $8, $9)
                     returning id, registration_status
                     """,
-                    user["user_id"], body.full_name, body.vertical, body.registration_body,
-                    body.registration_number, check["status"], _now(),
+                    user["user_id"], body.full_name, body.vertical, reg_body,
+                    reg_number, check["status"], _now(),
                     body.dbs_certificate_number, idhash,
                 )
         except Exception as e:
