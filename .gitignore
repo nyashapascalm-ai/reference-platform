@@ -7,3 +7,11 @@ __pycache__/
 .DS_Store
 pgdata/
 .supabase/
+*.bak
+*.bak2
+*.bak3
+patch_*.py
+endpoints_to_add.py
+apikeys_panel.jsx
+new_*.jsx
+shell.jsx

@@ -20,12 +20,89 @@ function Help({ text }) {
   );
 }
 
+// ---- Reffolio dashboard shell: sidebar + home tiles -----------------------
+function Icon({ name }) {
+  const p = {
+    home: <path d="M3 11l9-8 9 8M5 9v11h5v-6h4v6h5V9" />,
+    ref: <><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5" /><path d="M9.5 13l1.8 1.8L15 11" /></>,
+    team: <><circle cx="9" cy="8" r="3.2" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M17 8a3 3 0 0 1 0 6" /><path d="M21 20a5 5 0 0 0-4-4.9" /></>,
+    billing: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.5h19" /></>,
+    shield: <><path d="M12 3l8 3v6c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6z" /><path d="M9 12l2 2 4-4" /></>,
+    records: <><path d="M5 4h14v16H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+    request: <><circle cx="12" cy="12" r="9" /><path d="M12 8v5l3 2" /></>,
+    share: <><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6" /></>,
+    chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
+    user: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
+  }[name] || null;
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p}</svg>
+  );
+}
+
+function Tile({ icon, title, desc, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      textAlign: 'left', background: '#fff', border: '1px solid var(--line)', borderRadius: 16,
+      padding: 20, margin: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10,
+      boxShadow: 'none', color: 'var(--text)', transition: 'transform .12s ease, box-shadow .2s ease',
+    }}
+      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 16px 34px -20px rgba(30,42,90,.4)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+      <span style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--grad, #6C5CE7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} /></span>
+      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17 }}>{title}</span>
+      <span style={{ color: 'var(--muted)', fontSize: 13.5, lineHeight: 1.5 }}>{desc}</span>
+    </button>
+  );
+}
+
+function Shell({ me, signOut, nav, view, setView, children }) {
+  const NavItem = ({ id, icon, label }) => (
+    <button onClick={() => setView(id)} style={{
+      display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left',
+      background: view === id ? 'rgba(108,92,231,.10)' : 'transparent',
+      color: view === id ? 'var(--violet, #6C5CE7)' : 'var(--text)',
+      border: 'none', borderRadius: 10, padding: '10px 12px', margin: '2px 0', cursor: 'pointer',
+      fontSize: 14, fontWeight: 600, boxShadow: 'none',
+    }}>
+      <Icon name={icon} /> {label}
+    </button>
+  );
+  const roleLabel = me?.is_super_admin ? 'Reffolio staff'
+    : me?.role === 'org_admin' ? 'admin'
+    : me?.worker_id && !me?.org_id ? 'worker'
+    : (me?.role || '').replace('_', ' ') || 'member';
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'stretch' }}>
+      <aside style={{ width: 248, flexShrink: 0, borderRight: '1px solid var(--line-soft, #e7e9f2)', padding: '20px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 8px 16px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 19 }}>
+          <img src="/icon.svg" alt="" style={{ width: 26, height: 26, borderRadius: 7 }} /> Reffolio
+        </div>
+        <NavItem id="home" icon="home" label="Home" />
+        {nav.map((n) => <NavItem key={n.id} id={n.id} icon={n.icon} label={n.label} />)}
+        <div style={{ marginTop: 'auto', padding: '12px 8px 4px', borderTop: '1px solid var(--line-soft, #e7e9f2)' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{me?.email}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', textTransform: 'capitalize', marginBottom: 8 }}>{roleLabel}</div>
+          <button className="ghost" style={{ marginTop: 0, width: '100%' }} onClick={signOut}>Sign out</button>
+        </div>
+      </aside>
+      <main style={{ flex: 1, minWidth: 0, padding: '28px 32px', maxWidth: 1080 }}>
+        {view !== 'home' && (
+          <button className="ghost" style={{ marginTop: 0, marginBottom: 14 }} onClick={() => setView('home')}>&larr; Home</button>
+        )}
+        {children}
+      </main>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [setupRole, setSetupRole] = useState(null);
+  const [view, setView] = useState('home');
 
   useEffect(() => {
     try { const p = new URLSearchParams(window.location.search).get('setup'); if (p) setSetupRole(p); } catch {}
@@ -46,59 +123,100 @@ export default function Dashboard() {
 
   async function signOut() { await supabase.auth.signOut(); router.push('/'); }
 
-  if (loading) return <div className="wrap"><p className="muted">Loading…</p></div>;
+  if (loading) return <div className="wrap"><p className="muted">Loading...</p></div>;
+
+  // Not yet set up (and not staff): keep the simple onboarding screen, no shell.
+  if (!me?.org_id && !me?.worker_id && !me?.is_super_admin) {
+    return (
+      <div className="wrap">
+        <div className="topbar"><div><h1>Welcome to Reffolio</h1></div><button className="ghost" onClick={signOut}>Sign out</button></div>
+        {error && <div className="msg err">{error}</div>}
+        <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />
+      </div>
+    );
+  }
+
+  const isAdmin = me?.org_id && me.role === 'org_admin';
+  const isMember = me?.org_id && me.role !== 'org_admin';
+  const isWorker = me?.worker_id && !me?.org_id;
+  const isStaff = me?.is_super_admin && !me?.org_id && !me?.worker_id;
+
+  // Build the nav + tiles per role.
+  let nav = [];
+  let tiles = [];
+  if (me?.org_id) {
+    nav.push({ id: 'issue', icon: 'ref', label: 'Generate reference' });
+    if (isAdmin) {
+      nav.push({ id: 'oversight', icon: 'shield', label: 'Oversight' });
+      nav.push({ id: 'team', icon: 'team', label: 'Team & invites' });
+      nav.push({ id: 'billing', icon: 'billing', label: 'Billing' });
+    } else {
+      nav.push({ id: 'team', icon: 'team', label: 'Team' });
+      nav.push({ id: 'billing', icon: 'billing', label: 'Billing' });
+    }
+    tiles.push({ id: 'issue', icon: 'ref', title: 'Generate a reference', desc: 'Compose, AI-review and publish a verified reference.' });
+    if (isAdmin) {
+      tiles.push({ id: 'oversight', icon: 'shield', title: 'Oversight', desc: 'Team activity, records and reference controls.' });
+      tiles.push({ id: 'team', icon: 'team', title: 'Team & invites', desc: 'Invite colleagues and manage members.' });
+      tiles.push({ id: 'billing', icon: 'billing', title: 'Billing & subscription', desc: 'Plan, seats and payment.' });
+    } else {
+      tiles.push({ id: 'team', icon: 'team', title: 'Team', desc: 'See your organisation\u2019s members.' });
+      tiles.push({ id: 'billing', icon: 'billing', title: 'Billing', desc: 'View plan and seats.' });
+    }
+  }
+  if (me?.worker_id) {
+    nav.push({ id: 'myrefs', icon: 'records', label: 'My references' });
+    tiles.push({ id: 'myrefs', icon: 'records', title: 'My references', desc: 'Hold, request and share your verified references.' });
+  }
+  if (isStaff) {
+    tiles.push({ id: 'console', icon: 'chart', title: 'Operator console', desc: 'Organisations, analytics, lifecycle and reports.' });
+    nav.push({ id: 'console', icon: 'chart', label: 'Operator console' });
+  }
+
+  function Body() {
+    if (view === 'home') {
+      return (
+        <>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 30, margin: '0 0 4px' }}>
+            {isAdmin ? 'Management console' : isWorker ? 'Your references' : isStaff ? 'Reffolio staff' : 'Dashboard'}
+          </h1>
+          <p className="muted" style={{ margin: '0 0 22px' }}>Pick an action to get started.</p>
+          {error && <div className="msg err">{error}</div>}
+          {isStaff && (
+            <div className="card" style={{ borderLeft: '3px solid var(--violet, #6C5CE7)', marginBottom: 18 }}>
+              <b style={{ color: 'var(--text)' }}>You{'\u2019'}re signed in as Reffolio staff.</b>
+              <div className="kv">Open the operator console to manage organisations, billing, analytics and reports.</div>
+              <button style={{ marginTop: 10 }} onClick={() => router.push('/admin')}>Open admin console</button>
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+            {tiles.map((t) => (
+              <Tile key={t.id} icon={t.icon} title={t.title} desc={t.desc}
+                onClick={() => (t.id === 'console' ? router.push('/admin') : setView(t.id))} />
+            ))}
+          </div>
+          {isAdmin && (
+            <div style={{ marginTop: 26 }}>
+              <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.04em', marginBottom: 10 }}>Oversight at a glance</div>
+              <AdminOversightPanel me={me} />
+            </div>
+          )}
+        </>
+      );
+    }
+    if (view === 'issue') return <OrgPanel me={me} />;
+    if (view === 'oversight') return <AdminOversightPanel me={me} />;
+    if (view === 'team') return <TeamPanel me={me} />;
+    if (view === 'billing') return <BillingPanel me={me} />;
+    if (view === 'myrefs') return <WorkerPanel me={me} />;
+    return null;
+  }
 
   return (
-    <div className="wrap">
-      <div className="topbar">
-        <div>
-          <h1>{me?.role === 'org_admin' ? 'Management console' : 'Dashboard'}</h1>
-          <p className="muted">{me?.email}{me?.role ? ` · ${me.role === 'org_admin' ? 'admin' : (me.role || '').replace('_', ' ')}` : ''}</p>
-        </div>
-        <button className="ghost" onClick={signOut}>Sign out</button>
-      </div>
-      {error && <div className="msg err">{error}</div>}
-
-      {me?.is_super_admin && (
-        <div className="card" style={{ borderLeft: '3px solid var(--violet, #6C5CE7)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <div><b style={{ color: 'var(--text)' }}>You{'\u2019'}re signed in as Reffolio staff</b></div>
-              <div className="kv">Manage organisations, billing, analytics and reports in the operator console.</div>
-            </div>
-            <button style={{ marginTop: 0 }} onClick={() => router.push('/admin')}>Open admin console</button>
-          </div>
-        </div>
-      )}
-
-      {!me?.org_id && !me?.worker_id && !me?.is_super_admin && <Onboarding onDone={loadMe} role={setupRole} setRole={setSetupRole} />}
-      {!me?.org_id && !me?.worker_id && me?.is_super_admin && (
-        <div className="card">
-          <h2>Staff account</h2>
-          <p className="kv">This account isn{'\u2019'}t set up as an organisation or worker — that{'\u2019'}s expected for a staff login. Use the admin console above.</p>
-        </div>
-      )}
-
-      {me?.org_id && me.role === 'org_admin' ? (
-        <>
-          <AdminOversightPanel me={me} />
-          <TeamPanel me={me} />
-          <BillingPanel me={me} />
-          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.04em', margin: '28px 0 12px' }}>
-            You can also issue a reference
-          </div>
-          <OrgPanel me={me} />
-        </>
-      ) : me?.org_id ? (
-        <>
-          <OrgPanel me={me} />
-          <TeamPanel me={me} />
-          <BillingPanel me={me} />
-        </>
-      ) : null}
-
-      {me?.worker_id && <WorkerPanel me={me} />}
-    </div>
+    <Shell me={me} signOut={signOut} nav={nav} view={view} setView={setView}>
+      {error && view !== 'home' && <div className="msg err">{error}</div>}
+      <Body />
+    </Shell>
   );
 }
 
@@ -202,26 +320,26 @@ function OrgPanel({ me }) {
   const [meta, setMeta] = useState({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false); const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState(''); const [aiMsg, setAiMsg] = useState(''); const [flags, setFlags] = useState(null); const [analysis, setAnalysis] = useState({}); const [draftScore, setDraftScore] = useState(null);
+  const [step, setStep] = useState('compose'); // 'compose' | 'review'
 
   async function aiDraft() {
-    setAiMsg('Drafting…'); setErr(false);
-    try { const r = await api('/ai/draft', { method: 'POST', body: { notes, template_id: tpl.id } }); setContent(r.content); setAiMsg('AI draft inserted — review before publishing.'); }
+    setAiMsg('Drafting\u2026'); setErr(false);
+    try { const r = await api('/ai/draft', { method: 'POST', body: { notes, template_id: tpl.id } }); setContent(r.content); setAiMsg('AI draft inserted \u2014 edit anything, then continue to review.'); }
     catch (e) { setErr(true); setAiMsg(e.message); }
   }
   async function aiCheck() {
-    setAiMsg('Checking…'); setErr(false); setFlags(null);
-    try { const r = await api('/ai/check', { method: 'POST', body: { content } });
-      setFlags(r); setAiMsg(r.ok ? 'No fairness or defamation issues found.' : `${r.flags.length} issue(s) flagged.`); }
-    catch (e) { setErr(true); setAiMsg(e.message); }
+    setErr(false); setFlags(null);
+    try { const r = await api('/ai/check', { method: 'POST', body: { content } }); setFlags(r); return r; }
+    catch (e) { setErr(true); setAiMsg(e.message); return null; }
   }
-  function applyRewrite() { if (flags?.rewritten) { setContent({ ...content, ...flags.rewritten }); setFlags(null); setAiMsg('Rewrite applied.'); } }
+  function applyRewrite() { if (flags?.rewritten) { setContent({ ...content, ...flags.rewritten }); setFlags(null); setAiMsg('Rewrite applied \u2014 re-run review to re-check.'); } }
   async function analyseDraft() {
-    setAiMsg('Analysing draft…'); setErr(false); setDraftScore(null);
-    try { const r = await api('/ai/analyse', { method: 'POST', body: { content, assignment_context: meta.assignment_context, vertical: tpl?.vertical } }); setDraftScore(r); setAiMsg(''); }
-    catch (e) { setErr(true); setAiMsg(e.message); }
+    setErr(false); setDraftScore(null);
+    try { const r = await api('/ai/analyse', { method: 'POST', body: { content, assignment_context: meta.assignment_context, vertical: tpl?.vertical } }); setDraftScore(r); return r; }
+    catch (e) { setErr(true); setAiMsg(e.message); return null; }
   }
   async function analyse(id) {
-    setAiMsg('Analysing…'); setErr(false);
+    setAiMsg('Analysing\u2026'); setErr(false);
     try { const r = await api(`/references/${id}/analyse`, { method: 'POST' }); setAnalysis({ ...analysis, [id]: r }); setAiMsg(''); }
     catch (e) { setErr(true); setAiMsg(e.message); }
   }
@@ -236,14 +354,29 @@ function OrgPanel({ me }) {
   useEffect(() => { load(); }, [load]);
 
   const required = (tpl?.field_schema?.required) || [];
+  const fields = (tpl?.field_schema?.fields && tpl.field_schema.fields.length)
+    ? tpl.field_schema.fields
+    : required.map((k) => ({ key: k, label: k, type: 'text' }));
   const up = (k) => (e) => setMeta({ ...meta, [k]: e.target.value });
   const upc = (k) => (e) => setContent({ ...content, [k]: e.target.value });
 
-  async function draft() {
+  const validId = /^[0-9a-fA-F-]{36}$/.test((meta.worker_id || '').trim());
+  const missingRequired = required.filter((k) => !(content[k] || '').toString().trim());
+  const canReview = !!tpl && validId && missingRequired.length === 0;
+
+  // Step 1 -> 2: run both AI passes together, then show the review panel.
+  async function goReview() {
+    setMsg(''); setErr(false); setAiMsg('Reviewing \u2014 checking fairness and analysing\u2026');
+    setStep('review');
+    await aiCheck();
+    await analyseDraft();
+    setAiMsg('');
+  }
+
+  // Step 3: create the draft and publish it in one confirmed action.
+  async function confirmAndPublish() {
     setMsg(''); setErr(false);
-    if (!meta.worker_id || !/^[0-9a-fA-F-]{36}$/.test(meta.worker_id.trim())) {
-      setErr(true); setMsg('Paste a valid Worker ID first (from the worker\u2019s portal).'); return;
-    }
+    if (!canReview) { setErr(true); setMsg('Please complete the required fields first.'); return; }
     setBusy(true);
     try {
       const body = {
@@ -251,73 +384,137 @@ function OrgPanel({ me }) {
         assignment_context: meta.assignment_context, content,
         referee: meta.ref_email ? { full_name: meta.ref_name, job_title: meta.ref_title, work_email: meta.ref_email } : null,
       };
-      const r = await api('/references', { method: 'POST', body });
-      setContent({}); setNotes(''); setDraftScore(null); setFlags(null);
+      const created = await api('/references', { method: 'POST', body });
+      const pub = await api(`/references/${created.reference_id}/publish`, { method: 'POST' });
+      setContent({}); setNotes(''); setDraftScore(null); setFlags(null); setStep('compose');
       setMeta({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
-      setMsg('Draft created' + (r.referee ? ` · referee domain verified: ${r.referee.domain_verified}` : '') + ' — it’s now in the Draft column. Drag it to Published when ready.');
+      setMsg('Published \u00b7 tamper-evident hash ' + (pub.content_hash || '').slice(0, 16) + '\u2026 \u2014 the worker can now share it.');
+      load();
+    } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
+  }
+
+  // Save as a draft without publishing (goes to the board for later).
+  async function saveDraftOnly() {
+    setMsg(''); setErr(false);
+    if (!canReview) { setErr(true); setMsg('Please complete the required fields first.'); return; }
+    setBusy(true);
+    try {
+      const body = {
+        worker_id: meta.worker_id, template_id: tpl.id,
+        assignment_context: meta.assignment_context, content,
+        referee: meta.ref_email ? { full_name: meta.ref_name, job_title: meta.ref_title, work_email: meta.ref_email } : null,
+      };
+      await api('/references', { method: 'POST', body });
+      setContent({}); setNotes(''); setDraftScore(null); setFlags(null); setStep('compose');
+      setMeta({ worker_id: '', assignment_context: '', ref_name: '', ref_title: '', ref_email: '' });
+      setMsg('Saved as a draft \u2014 it\u2019s in the Draft column. Drag it to Published when ready.');
       load();
     } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
   }
   async function publish(id) {
     setMsg(''); setErr(false);
-    try { const r = await api(`/references/${id}/publish`, { method: 'POST' }); setMsg('Published · hash ' + r.content_hash); load(); }
+    try { const r = await api(`/references/${id}/publish`, { method: 'POST' }); setMsg('Published \u00b7 hash ' + r.content_hash); load(); }
     catch (e) { setErr(true); setMsg(e.message); }
   }
+
+  const stepBadge = (n, labelTxt, active, done) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: active || done ? 1 : 0.5 }}>
+      <span style={{ width: 22, height: 22, borderRadius: '50%', background: active ? 'var(--grad, #6C5CE7)' : (done ? 'var(--accent, #00B8A6)' : 'var(--line)'), color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{done ? '\u2713' : n}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--text)' : 'var(--muted)' }}>{labelTxt}</span>
+    </div>
+  );
 
   return (
     <div className="card">
       <h2>Issue a reference</h2>
-      <p className="muted">Organisation set up. Draft a practice-based reference, then publish it (server computes the tamper-evident hash).</p>
-      <label>Template <Help text="The reference format you are filling in. Templates follow the statutory/regulatory standard for the sector (e.g. the social-work practice-based reference) and set which fields are required." /></label>
-      <select value={tpl?.id || ''} onChange={(e) => setTpl(templates.find((t) => t.id === e.target.value))}>
-        {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.version})</option>)}
-      </select>
-      <label>Worker ID (from the worker’s portal) <Help text="Every worker has a unique Reffolio Worker ID shown in their portal. Ask the worker to send it to you, then paste it here so the reference is bound to the right person." /></label>
-      <input value={meta.worker_id} onChange={up('worker_id')} placeholder="paste worker_id" />
-      <label>Draft with AI (paste rough notes) <Help text="Paste your rough notes about the worker. Reffolio's AI turns them into a fair, evidence-based reference filling the required fields. You can edit everything before publishing." /></label>
-      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
-        style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 }}
-        placeholder="e.g. Sam worked here 2022-24 as senior practitioner, strong on assessments, no conduct issues" />
-      <button className="ghost" onClick={aiDraft} disabled={!tpl || !notes}>Draft with AI</button>
-      <label>Assignment context <Help text="The role or setting this reference relates to — e.g. the team, service or placement the worker was in (such as 'Children & Families team'). It gives the reader context for the reference." /></label>
-      <input value={meta.assignment_context} onChange={up('assignment_context')} placeholder="Children & Families team" />
-      {(tpl?.field_schema?.fields && tpl.field_schema.fields.length
-        ? tpl.field_schema.fields
-        : required.map((k) => ({ key: k, label: k, type: 'text' }))
-      ).map((fld) => (
-        <div key={fld.key}>
-          <label>{fld.label}{required.includes(fld.key) ? ' *' : ''}</label>
-          {fld.type === 'textarea'
-            ? <textarea rows={3} value={content[fld.key] || ''} onChange={upc(fld.key)} />
-            : <input value={content[fld.key] || ''} onChange={upc(fld.key)} />}
-        </div>
-      ))}
-      <label>Referee name</label><input value={meta.ref_name} onChange={up('ref_name')} />
-      <label>Referee job title</label><input value={meta.ref_title} onChange={up('ref_title')} />
-      <label>Referee work email (must match your domain) <Help text="The named referee's work email. If its domain matches your organisation's verified domain, Reffolio marks it 'domain verified'. The referee is also emailed a link to personally confirm they provided the reference." /></label>
-      <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@barchester.gov.uk" />
-      <div className="row">
-        <button onClick={draft} disabled={busy || !tpl}>Create draft</button>
-        <Help text="Saves the reference as a draft and places it in the Draft column. Nothing is published or shared yet — you publish later by dragging it to Published." />
-        <button className="ghost" onClick={aiCheck} disabled={Object.keys(content).length === 0}>Check fairness</button>
-        <Help text="Runs an AI check for unfair, discriminatory or potentially defamatory wording, and offers a safer rewrite you can apply with one click." />
-        <button className="ghost" onClick={analyseDraft} disabled={Object.keys(content).length === 0}>Analyse draft</button>
-        <Help text="Scores the draft for risk (0–100) and maps the evidence to the professional framework for the selected template’s sector, so you can sense-check it before publishing." />
-        {flags && !flags.ok && Object.keys(flags.rewritten || {}).length > 0 && <button className="ghost" onClick={applyRewrite}>Apply AI rewrite</button>}
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', margin: '6px 0 18px' }}>
+        {stepBadge(1, 'Compose', step === 'compose', step === 'review')}
+        {stepBadge(2, 'Review', step === 'review', false)}
+        {stepBadge(3, 'Publish', false, false)}
       </div>
-      {draftScore && (
-        <div style={{ marginTop: 8 }}>
-          <div className="kv">Draft risk score: <b style={{ color: 'var(--text)' }}>{draftScore.risk_score}</b> / 100</div>
-          <div className="kv">{draftScore.summary}</div>
-        </div>
+
+      {step === 'compose' && (
+        <>
+          <p className="muted">Fill in the reference (or let AI draft it from your notes). You{'\u2019'}ll review it before anything is published.</p>
+          <label>Template <Help text="The reference format. Templates follow the statutory/regulatory standard for the sector and set which fields are required." /></label>
+          <select value={tpl?.id || ''} onChange={(e) => setTpl(templates.find((t) => t.id === e.target.value))}>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.version})</option>)}
+          </select>
+          <label>Worker ID (from the worker{'\u2019'}s portal) <Help text="Every worker has a unique Reffolio Worker ID shown in their portal. Paste it here so the reference is bound to the right person." /></label>
+          <input value={meta.worker_id} onChange={up('worker_id')} placeholder="paste worker_id" />
+          {meta.worker_id && !validId && <div className="kv" style={{ color: 'var(--danger, #c0392b)' }}>That doesn{'\u2019'}t look like a valid Worker ID.</div>}
+
+          <label>Draft with AI (paste rough notes) <Help text="Paste rough notes about the worker. AI turns them into a fair, evidence-based draft you can edit." /></label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+            style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 9, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14 }}
+            placeholder="e.g. Sam worked here 2022-24 as senior practitioner, strong on assessments, no conduct issues" />
+          <button className="ghost" onClick={aiDraft} disabled={!tpl || !notes}>Draft with AI</button>
+
+          <label>Assignment context <Help text="The role or setting this reference relates to (e.g. the team or service the worker was in)." /></label>
+          <input value={meta.assignment_context} onChange={up('assignment_context')} placeholder="e.g. Domiciliary care team" />
+
+          {fields.map((fld) => (
+            <div key={fld.key}>
+              <label>{fld.label}{required.includes(fld.key) ? ' *' : ''}</label>
+              {fld.type === 'textarea'
+                ? <textarea rows={3} value={content[fld.key] || ''} onChange={upc(fld.key)} />
+                : <input value={content[fld.key] || ''} onChange={upc(fld.key)} />}
+            </div>
+          ))}
+
+          <label>Referee name</label><input value={meta.ref_name} onChange={up('ref_name')} />
+          <label>Referee job title</label><input value={meta.ref_title} onChange={up('ref_title')} />
+          <label>Referee work email (should match your domain) <Help text="The named referee's work email. A matching domain is marked 'domain verified', and the referee is emailed a link to confirm authorship." /></label>
+          <input value={meta.ref_email} onChange={up('ref_email')} placeholder="manager@yourorg.gov.uk" />
+
+          <button onClick={goReview} disabled={!canReview} style={{ marginTop: 14 }}>Review before publishing &rarr;</button>
+          {!canReview && (tpl ? (missingRequired.length > 0
+            ? <div className="kv">Complete the required fields ({missingRequired.length} left) and a valid Worker ID to continue.</div>
+            : <div className="kv">Paste a valid Worker ID to continue.</div>) : null)}
+        </>
       )}
-      {aiMsg && <div className={'msg' + (err ? ' err' : '')}>{aiMsg}</div>}
-      {flags && flags.flags && flags.flags.map((fl, i) => (
-        <div className="kv" key={i}>⚠ {fl.field}: {fl.issue} <span className="badge">{fl.severity}</span></div>
-      ))}
+
+      {step === 'review' && (
+        <>
+          <p className="muted">Review the AI{'\u2019'}s checks below. If you{'\u2019'}re happy, publish, or go back to edit.</p>
+
+          {aiMsg && <div className={'msg' + (err ? ' err' : '')}>{aiMsg}</div>}
+
+          <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 16, margin: '8px 0' }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Fairness &amp; defamation check</div>
+            {flags == null ? <div className="kv">Running...</div>
+              : flags.ok ? <div className="kv" style={{ color: 'var(--accent)' }}>{'\u2713'} No fairness or defamation issues found.</div>
+              : <>
+                  {(flags.flags || []).map((fl, i) => (
+                    <div className="kv" key={i}>{'\u26a0'} {fl.field}: {fl.issue} <span className="badge">{fl.severity}</span></div>
+                  ))}
+                  {Object.keys(flags.rewritten || {}).length > 0 &&
+                    <button className="ghost" onClick={applyRewrite} style={{ marginTop: 8 }}>Apply AI rewrite</button>}
+                </>}
+          </div>
+
+          <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 16, margin: '8px 0' }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Sector assessment {tpl ? <span className="badge">{tpl.name}</span> : null}</div>
+            {draftScore == null ? <div className="kv">Running...</div>
+              : <>
+                  <div className="kv">Risk score: <b style={{ color: 'var(--text)' }}>{draftScore.risk_score}</b> / 100</div>
+                  <div className="kv">{draftScore.summary}</div>
+                </>}
+          </div>
+
+          <div className="row" style={{ marginTop: 14, gap: 8, flexWrap: 'wrap' }}>
+            <button className="ghost" onClick={() => { setStep('compose'); setAiMsg(''); }}>&larr; Back to edit</button>
+            <button className="ghost" onClick={goReview}>Re-run review</button>
+            <button className="ghost" onClick={saveDraftOnly} disabled={busy}>Save as draft</button>
+            <button onClick={confirmAndPublish} disabled={busy}>I{'\u2019'}m happy {'\u2014'} publish now</button>
+          </div>
+          <p className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>Publishing computes the tamper-evident hash and lets the worker share it. The named referee is emailed to confirm authorship.</p>
+        </>
+      )}
+
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
 
-      <h2 style={{ marginTop: 24 }}>Issued references <Help text="Your references as a board. <b>Draft</b>: created but not yet live. <b>Published</b>: finalised with a tamper-evident hash. <b>Viewed</b>: a published reference that someone has opened. Drag a draft into Published to publish it." /></h2>
+      <h2 style={{ marginTop: 24 }}>Issued references <Help text="Your references as a board. Draft: created but not live. Published: finalised with a tamper-evident hash. Viewed: opened by a recipient. Drag a draft into Published to publish it." /></h2>
       <p className="muted">Drag a draft into <b>Published</b> to publish it (the tamper-evident hash is generated on drop).</p>
       <ReferenceBoard refs={refs} onPublish={publish} />
     </div>
@@ -742,43 +939,117 @@ function BillingPanel({ me }) {
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
   const isAdmin = me.role === 'org_admin';
-
   const load = useCallback(async () => {
     try { setB(await api('/billing/me')); } catch (e) { /* ignore */ }
   }, []);
   useEffect(() => { load(); }, [load]);
-
   async function go(path, body, key) {
     setBusy(key); setMsg(''); setErr(false);
     try { const r = await api(path, { method: 'POST', body }); if (r.url) window.location.href = r.url; else { setBusy(''); load(); } }
     catch (e) { setErr(true); setMsg(e.message); setBusy(''); }
   }
-
   if (!b) return null;
   const f = b.features || {};
+  const current = (b.plan || 'free').toLowerCase();
+
+  // Columns reflect what the backend actually enforces (seats, api, white_label).
+  const PLANS = [
+    { id: 'free',     name: 'Free',     price: '£0',       blurb: 'Trying Reffolio or a single team.' },
+    { id: 'starter',  name: 'Starter',  price: '£49/mo',   blurb: 'A small team running references regularly.' },
+    { id: 'growth',   name: 'Growth',   price: '£149/mo',  blurb: 'Busy departments and growing agencies.', popular: true },
+    { id: 'business', name: 'Business', price: '£299/mo',  blurb: 'Large teams and multi-branch agencies.' },
+  ];
+  // Each row: label, help, and value per plan ('yes' | 'no' | custom string).
+  const ROWS = [
+    { label: 'Manager seats', vals: { free: '2', starter: '3', growth: '10', business: '25' } },
+    { label: 'Issue & verify references', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Tamper-evident records', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Consent-based worker sharing', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'AI fairness + sector analysis', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Team management & invites', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Admin oversight & records', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Pay-as-you-go credits', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'API access', vals: { free: 'no', starter: 'no', growth: 'yes', business: 'yes' } },
+    { label: 'White-label', vals: { free: 'no', starter: 'no', growth: 'yes', business: 'yes' } },
+    { label: 'Support', vals: { free: 'Community', starter: 'Email', growth: 'Priority', business: 'Priority' } },
+  ];
+
+  const cell = (v) => {
+    if (v === 'yes') return <span style={{ color: 'var(--accent, #00B8A6)', fontWeight: 700 }}>{'\u2713'}</span>;
+    if (v === 'no') return <span style={{ color: 'var(--muted)' }}>{'\u2014'}</span>;
+    return <span style={{ color: 'var(--text)' }}>{v}</span>;
+  };
+  const planAction = (p) => {
+    if (p.id === 'free') {
+      return current === 'free'
+        ? <span className="badge pub">Current plan</span>
+        : <span className="kv" style={{ fontSize: 12 }}>Downgrade via Manage</span>;
+    }
+    if (current === p.id) {
+      return <button className="ghost" style={{ marginTop: 0, width: '100%' }} onClick={() => go('/billing/portal', {}, 'p')} disabled={!!busy}>Manage</button>;
+    }
+    const key = p.id[0];
+    return <button style={{ marginTop: 0, width: '100%' }} onClick={() => go('/billing/checkout', { plan: p.id }, key)} disabled={!!busy}>Choose {p.name}</button>;
+  };
+
   return (
     <div className="card">
       <h2>Billing &amp; plan <Help text="Your subscription. The admin manages the plan and seats centrally; charges are billed to the organisation. Upgrading adds seats and features." /></h2>
-      <div className="kv">Plan: <b style={{ color: 'var(--text)' }}>{f.label || b.plan}</b> · {b.status}</div>
-      <div className="kv">Seats: {b.seats_used} of {b.seats} used</div>
-      <div className="kv">Pay-as-you-go credits: {b.credits}</div>
+      <div className="kv">Current plan: <b style={{ color: 'var(--text)' }}>{f.label || b.plan}</b> {'\u00b7'} {b.status}</div>
+      <div className="kv">Seats: {b.seats_used} of {b.seats} used {'\u00b7'} {b.credits} pay-as-you-go credit{b.credits === 1 ? '' : 's'}</div>
       {b.current_period_end && <div className="kv">Renews: {new Date(b.current_period_end).toLocaleDateString()}</div>}
-
       {!isAdmin && <div className="kv" style={{ marginTop: 10 }}>Billing is managed by your organisation admin.</div>}
+
+      <div style={{ overflowX: 'auto', marginTop: 18 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640, fontSize: 13.5 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid var(--line)' }}></th>
+              {PLANS.map((p) => (
+                <th key={p.id} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid var(--line)', background: current === p.id ? 'rgba(108,92,231,.06)' : 'transparent', borderTopLeftRadius: 10, borderTopRightRadius: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{p.name}</span>
+                    {p.popular && <span className="badge">Popular</span>}
+                    {current === p.id && <span className="badge pub">Current</span>}
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '2px 0' }}>{p.price}</div>
+                  <div style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, lineHeight: 1.4 }}>{p.blurb}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROWS.map((row, ri) => (
+              <tr key={ri}>
+                <td style={{ padding: '9px 12px', borderBottom: '1px solid var(--line-soft, #eef0f6)', color: 'var(--text)', fontWeight: 500 }}>{row.label}</td>
+                {PLANS.map((p) => (
+                  <td key={p.id} style={{ padding: '9px 12px', borderBottom: '1px solid var(--line-soft, #eef0f6)', background: current === p.id ? 'rgba(108,92,231,.06)' : 'transparent' }}>{cell(row.vals[p.id])}</td>
+                ))}
+              </tr>
+            ))}
+            {isAdmin && (
+              <tr>
+                <td style={{ padding: '14px 12px' }}></td>
+                {PLANS.map((p) => (
+                  <td key={p.id} style={{ padding: '14px 12px', background: current === p.id ? 'rgba(108,92,231,.06)' : 'transparent', borderBottomLeftRadius: 10, borderBottomRightRadius: 10 }}>{planAction(p)}</td>
+                ))}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
+        <b>Enterprise</b> {'\u2014'} 100+ seats, custom terms, SSO and onboarding support. Contact us for a quote.
+      </p>
 
       {isAdmin && (
         <>
-          {!b.configured && <div className="msg">Billing isn\u2019t fully configured yet.</div>}
-          <div className="kv" style={{ textTransform: 'uppercase', fontSize: 11, marginTop: 14 }}>Change plan</div>
-          <div className="row" style={{ marginTop: 6 }}>
-            <button onClick={() => go('/billing/checkout', { plan: 'starter' }, 's')} disabled={!!busy}>Starter · £49</button>
-            <button onClick={() => go('/billing/checkout', { plan: 'growth' }, 'g')} disabled={!!busy}>Growth · £149</button>
-            <button onClick={() => go('/billing/checkout', { plan: 'business' }, 'b')} disabled={!!busy}>Business · £299</button>
-          </div>
           <div className="row" style={{ marginTop: 8 }}>
             <button className="ghost" onClick={() => go('/billing/credits/checkout', { quantity: 10 }, 'c')} disabled={!!busy}>Buy 10 credits</button>
             <button className="ghost" onClick={() => go('/billing/portal', {}, 'p')} disabled={!!busy}>Manage subscription</button>
           </div>
+          {!b.configured && <div className="msg" style={{ marginTop: 8 }}>Billing isn{'\u2019'}t fully configured yet.</div>}
           {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
         </>
       )}

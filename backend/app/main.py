@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import ai, billing, db, email, swe
+from . import ai, apikeys, billing, db, email, swe
 from .auth import current_user, require_org_actor, require_worker
 from .hashing import content_hash, identity_hash, new_share_token, token_hash
 from .swe import check_registration
@@ -1415,3 +1415,197 @@ async def share_redeem(share_token: str, viewer: ViewerIn, request: Request):
             "summary": ref["ai_summary"],
         },
     }
+
+
+# ============================================================
+# Public API (v1) + API key management
+# ============================================================
+
+class ApiKeyCreateIn(BaseModel):
+    name: str | None = None
+
+
+@app.get("/org/api-keys")
+async def list_api_keys(actor=Depends(require_org_actor)):
+    if actor["role"] != "org_admin":
+        raise HTTPException(403, "only an organisation admin can manage API keys")
+    async with db.pool().acquire() as c:
+        rows = await c.fetch(
+            "select id, name, prefix, last_used_at, revoked_at, created_at "
+            "from api_keys where org_id = $1 order by created_at desc",
+            actor["org_id"],
+        )
+    plan = "free"
+    async with db.pool().acquire() as c:
+        b = await c.fetchrow("select coalesce(plan,'free') as plan from billing_customers where org_id = $1", actor["org_id"])
+        if b:
+            plan = b["plan"]
+    return {"api_enabled": bool(billing.features(plan).get("api")), "keys": [dict(r) for r in rows]}
+
+
+@app.post("/org/api-keys", status_code=201)
+async def create_api_key(body: ApiKeyCreateIn, actor=Depends(require_org_actor)):
+    if actor["role"] != "org_admin":
+        raise HTTPException(403, "only an organisation admin can create API keys")
+    async with db.pool().acquire() as c:
+        b = await c.fetchrow("select coalesce(plan,'free') as plan from billing_customers where org_id = $1", actor["org_id"])
+        plan = b["plan"] if b else "free"
+        if not billing.features(plan).get("api"):
+            raise HTTPException(402, "The API is available on the Growth and Business plans. Upgrade to create API keys.")
+        raw, kh, prefix = apikeys.generate_key()
+        row = await c.fetchrow(
+            "insert into api_keys (org_id, name, key_hash, prefix, created_by) "
+            "values ($1, $2, $3, $4, $5::uuid) returning id, created_at",
+            actor["org_id"], (body.name or "API key").strip()[:80], kh, prefix, actor["profile_id"],
+        )
+    # raw key returned exactly once
+    return {"id": str(row["id"]), "name": (body.name or "API key"), "prefix": prefix, "key": raw,
+            "created_at": row["created_at"].isoformat()}
+
+
+@app.delete("/org/api-keys/{key_id}")
+async def revoke_api_key(key_id: UUID, actor=Depends(require_org_actor)):
+    if actor["role"] != "org_admin":
+        raise HTTPException(403, "only an organisation admin can revoke API keys")
+    async with db.pool().acquire() as c:
+        r = await c.execute(
+            "update api_keys set revoked_at = now() where id = $1 and org_id = $2 and revoked_at is null",
+            key_id, actor["org_id"],
+        )
+    return {"revoked": True}
+
+
+# ---- /v1 public API (authenticated by API key) -------------------------------
+
+@app.get("/v1/ping")
+async def v1_ping(actor=Depends(apikeys.require_api_org)):
+    return {"ok": True, "org_id": str(actor["org_id"]), "scope": "org"}
+
+
+@app.get("/v1/templates")
+async def v1_templates(vertical: str | None = None, actor=Depends(apikeys.require_api_org)):
+    async with db.pool().acquire() as c:
+        if vertical:
+            rows = await c.fetch(
+                "select id, vertical, name, version, field_schema from reference_templates "
+                "where is_active and vertical = $1::vertical_t order by name", vertical)
+        else:
+            rows = await c.fetch(
+                "select id, vertical, name, version, field_schema from reference_templates "
+                "where is_active order by name")
+    return [dict(r) for r in rows]
+
+
+@app.post("/v1/workers/verify", status_code=201)
+async def v1_workers_verify(body: WorkerVerifyIn, actor=Depends(apikeys.require_api_org)):
+    # API cannot create the Supabase auth profile, so this verifies an
+    # org-scoped worker record by identity (no register lookup unless provided).
+    no_register = (body.registration_body or "").strip().lower() in ("none", "self", "")
+    if no_register:
+        reg_body, reg_number = "none", "api-" + secrets.token_hex(8)
+        check = {"status": "not_applicable"}
+    else:
+        reg_body = body.registration_body
+        if not body.registration_number:
+            raise HTTPException(422, "registration_number is required for this registration body")
+        reg_number = body.registration_number
+        check = await check_registration(reg_body, reg_number)
+    idhash = identity_hash(reg_body, reg_number, body.dbs_certificate_number)
+    async with db.pool().acquire() as c:
+        try:
+            row = await c.fetchrow(
+                "insert into workers (profile_id, full_name, vertical, registration_body, registration_number, "
+                " registration_status, registration_checked_at, dbs_certificate_number, identity_hash) "
+                "values (null, $1, $2::vertical_t, $3::registration_body_t, $4, $5::verification_status_t, $6, $7, $8) "
+                "returning id, registration_status",
+                body.full_name, body.vertical, reg_body, reg_number, check["status"], _now(),
+                body.dbs_certificate_number, idhash,
+            )
+        except Exception as e:
+            if "workers_registration_body_registration_number_key" in str(e):
+                raise HTTPException(409, "a worker with this registration already exists")
+            raise
+    return {"worker_id": str(row["id"]), "registration_status": row["registration_status"]}
+
+
+@app.post("/v1/references", status_code=201)
+async def v1_reference_create(body: ReferenceCreateIn, actor=Depends(apikeys.require_api_org)):
+    org_id = actor["org_id"]
+    async with db.pool().acquire() as c:
+        org = await c.fetchrow("select email_domain from orgs where id = $1", org_id)
+        async with c.transaction():
+            ref = await c.fetchrow(
+                'insert into "references" (worker_id, issuing_org_id, template_id, assignment_context, content, created_by) '
+                "values ($1, $2, $3, $4, $5, null) returning id, status",
+                body.worker_id, org_id, body.template_id, body.assignment_context, body.content,
+            )
+            if body.referee is not None:
+                domain = body.referee.work_email.split("@")[-1].lower()
+                verified = bool(org["email_domain"]) and domain == str(org["email_domain"]).lower()
+                await c.execute(
+                    "insert into referees (reference_id, full_name, job_title, work_email, email_domain, domain_verified, auth_method) "
+                    "values ($1, $2, $3, $4, $5, $6, 'email_link')",
+                    ref["id"], body.referee.full_name, body.referee.job_title, body.referee.work_email, domain, verified)
+    return {"reference_id": str(ref["id"]), "status": ref["status"]}
+
+
+@app.post("/v1/references/{reference_id}/publish")
+async def v1_reference_publish(reference_id: UUID, actor=Depends(apikeys.require_api_org)):
+    org_id = actor["org_id"]
+    async with db.pool().acquire() as c:
+        ref = await c.fetchrow('select worker_id, issuing_org_id, template_id, content, status from "references" where id = $1', reference_id)
+        if ref is None:
+            raise HTTPException(404, "reference not found")
+        if ref["issuing_org_id"] != org_id:
+            raise HTTPException(403, "this reference belongs to a different organisation")
+        if ref["status"] == "published":
+            raise HTTPException(409, "reference already published")
+        tmpl = await c.fetchrow("select field_schema, vertical from reference_templates where id = $1", ref["template_id"])
+        required = (tmpl["field_schema"] or {}).get("required", []) if tmpl else []
+        content = ref["content"] or {}
+        missing = [f for f in required if not content.get(f)]
+        if missing:
+            raise HTTPException(422, {"error": "content missing required fields", "missing": missing})
+        chash = content_hash(str(ref["worker_id"]), str(org_id), content)
+        await c.execute("update \"references\" set status='published', content_hash=$2, published_at=$3 where id=$1",
+                        reference_id, chash, _now())
+        try:
+            result = await ai.synthesise(content, None, tmpl["vertical"] if tmpl else None)
+            await c.execute('update "references" set competency_map=$2, risk_score=$3, ai_summary=$4 where id=$1',
+                            reference_id, result["competency_map"], result["risk_score"], result["summary"])
+        except Exception:
+            pass
+    return {"reference_id": str(reference_id), "status": "published", "content_hash": chash}
+
+
+@app.get("/v1/references/{reference_id}")
+async def v1_reference_get(reference_id: UUID, actor=Depends(apikeys.require_api_org)):
+    async with db.pool().acquire() as c:
+        r = await c.fetchrow(
+            'select r.id, r.status, r.assignment_context, r.content, r.content_hash, r.risk_score, '
+            'r.ai_summary, r.published_at, r.created_at, w.full_name as worker_name '
+            'from "references" r join workers w on w.id = r.worker_id '
+            'where r.id = $1 and r.issuing_org_id = $2', reference_id, actor["org_id"])
+    if r is None:
+        raise HTTPException(404, "reference not found")
+    d = dict(r); d["id"] = str(d["id"])
+    for k in ("published_at", "created_at"):
+        if d.get(k) is not None:
+            d[k] = d[k].isoformat()
+    return d
+
+
+@app.get("/v1/references")
+async def v1_reference_list(actor=Depends(apikeys.require_api_org)):
+    async with db.pool().acquire() as c:
+        rows = await c.fetch(
+            'select r.id, r.status, r.assignment_context, r.content_hash, r.published_at, '
+            'w.full_name as worker_name from "references" r join workers w on w.id = r.worker_id '
+            'where r.issuing_org_id = $1 order by r.created_at desc', actor["org_id"])
+    out = []
+    for r in rows:
+        d = dict(r); d["id"] = str(d["id"])
+        if d.get("published_at") is not None:
+            d["published_at"] = d["published_at"].isoformat()
+        out.append(d)
+    return out

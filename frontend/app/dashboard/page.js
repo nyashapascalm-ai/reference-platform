@@ -150,6 +150,7 @@ export default function Dashboard() {
       nav.push({ id: 'oversight', icon: 'shield', label: 'Oversight' });
       nav.push({ id: 'team', icon: 'team', label: 'Team & invites' });
       nav.push({ id: 'billing', icon: 'billing', label: 'Billing' });
+      nav.push({ id: 'apikeys', icon: 'chart', label: 'API' });
     } else {
       nav.push({ id: 'team', icon: 'team', label: 'Team' });
       nav.push({ id: 'billing', icon: 'billing', label: 'Billing' });
@@ -159,6 +160,7 @@ export default function Dashboard() {
       tiles.push({ id: 'oversight', icon: 'shield', title: 'Oversight', desc: 'Team activity, records and reference controls.' });
       tiles.push({ id: 'team', icon: 'team', title: 'Team & invites', desc: 'Invite colleagues and manage members.' });
       tiles.push({ id: 'billing', icon: 'billing', title: 'Billing & subscription', desc: 'Plan, seats and payment.' });
+      tiles.push({ id: 'apikeys', icon: 'chart', title: 'API access', desc: 'Generate keys to connect your own systems.' });
     } else {
       tiles.push({ id: 'team', icon: 'team', title: 'Team', desc: 'See your organisation\u2019s members.' });
       tiles.push({ id: 'billing', icon: 'billing', title: 'Billing', desc: 'View plan and seats.' });
@@ -208,6 +210,7 @@ export default function Dashboard() {
     if (view === 'oversight') return <AdminOversightPanel me={me} />;
     if (view === 'team') return <TeamPanel me={me} />;
     if (view === 'billing') return <BillingPanel me={me} />;
+    if (view === 'apikeys') return <ApiKeysPanel me={me} />;
     if (view === 'myrefs') return <WorkerPanel me={me} />;
     return null;
   }
@@ -1053,6 +1056,95 @@ function BillingPanel({ me }) {
           {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
         </>
       )}
+    </div>
+  );
+}
+
+
+function ApiKeysPanel({ me }) {
+  const [data, setData] = useState(null);
+  const [name, setName] = useState('');
+  const [created, setCreated] = useState(null); // the raw key, shown once
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
+  const isAdmin = me.role === 'org_admin';
+
+  const load = useCallback(async () => {
+    try { setData(await api('/org/api-keys')); } catch (e) { setErr(true); setMsg(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function createKey() {
+    setBusy(true); setMsg(''); setErr(false); setCreated(null); setCopied(false);
+    try {
+      const r = await api('/org/api-keys', { method: 'POST', body: { name: name || 'API key' } });
+      setCreated(r); setName(''); load();
+    } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
+  }
+  async function revoke(id) {
+    setMsg(''); setErr(false);
+    try { await api(`/org/api-keys/${id}`, { method: 'DELETE' }); load(); }
+    catch (e) { setErr(true); setMsg(e.message); }
+  }
+  function copyKey() {
+    if (created?.key) { navigator.clipboard?.writeText(created.key); setCopied(true); }
+  }
+
+  if (!data) return <div className="card"><p className="muted">Loading...</p></div>;
+  if (!isAdmin) return <div className="card"><h2>API</h2><p className="kv">API keys are managed by your organisation admin.</p></div>;
+
+  if (!data.api_enabled) {
+    return (
+      <div className="card">
+        <h2>API access</h2>
+        <p className="muted">The Reffolio API lets your own systems (e.g. your ATS or HR platform) create and verify references automatically.</p>
+        <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 18, marginTop: 10 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Available on Growth & Business</div>
+          <p className="kv">Upgrade your plan to generate API keys and integrate Reffolio with your systems.</p>
+        </div>
+        <p className="kv" style={{ marginTop: 12 }}>See the <a href="/developers" target="_blank" rel="noopener">API documentation</a> for what the integration can do.</p>
+      </div>
+    );
+  }
+
+  const keys = data.keys || [];
+  return (
+    <div className="card">
+      <h2>API keys <Help text="Keys authenticate your own software as your organisation. Treat a key like a password: anyone with it can create and read your references via the API." /></h2>
+      <p className="muted">Use these to connect your systems to Reffolio. Full guide at <a href="/developers" target="_blank" rel="noopener">reffolio.co.uk/developers</a>.</p>
+
+      <label>Key name (optional)</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. ATS integration" />
+      <button onClick={createKey} disabled={busy} style={{ marginTop: 10 }}>Generate API key</button>
+
+      {created && (
+        <div style={{ border: '1px solid var(--accent, #00B8A6)', borderRadius: 12, padding: 16, marginTop: 14, background: 'rgba(0,184,166,.06)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Your new key {'\u2014'} copy it now</div>
+          <p className="kv" style={{ marginTop: 0 }}>This is the only time the full key is shown. Store it somewhere safe; if you lose it, revoke it and make a new one.</p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, background: 'var(--ink, #0c1020)', color: '#fff', padding: '8px 12px', borderRadius: 8, wordBreak: 'break-all' }}>{created.key}</code>
+            <button className="ghost" style={{ marginTop: 0 }} onClick={copyKey}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+        </div>
+      )}
+
+      <h2 style={{ marginTop: 22, fontSize: 18 }}>Your keys</h2>
+      {keys.length === 0 && <p className="kv">No keys yet.</p>}
+      {keys.map((k) => (
+        <div className="item" key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div>
+            <div>{k.name} {k.revoked_at && <span className="badge">revoked</span>}</div>
+            <div className="kv" style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12 }}>{k.prefix}{'\u2026'}</div>
+            <div className="kv" style={{ fontSize: 12 }}>
+              {k.last_used_at ? 'Last used ' + new Date(k.last_used_at).toLocaleString() : 'Never used'}
+              {' \u00b7 created '}{new Date(k.created_at).toLocaleDateString()}
+            </div>
+          </div>
+          {!k.revoked_at && <button className="ghost" style={{ marginTop: 0 }} onClick={() => revoke(k.id)}>Revoke</button>}
+        </div>
+      ))}
+      {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
     </div>
   );
 }
