@@ -6,13 +6,13 @@ import MarketingFooter from '../../components/MarketingFooter';
 
 const PLANS = [
   { name: 'Free', price: '£0', unit: '', sub: 'For trying Reffolio or a single team getting started.', seats: '2 seats',
-    features: ['2 seats', 'Issue & verify references', 'Tamper-evident records', 'Consent-based worker sharing', 'AI fairness & sector analysis'], cta: 'Start free' },
+    features: ['2 seats', 'Issue & verify references', 'Tamper-evident records', 'Worker sharing by consent'], cta: 'Start free' },
   { name: 'Starter', price: '£49', unit: '/mo', sub: 'For a small team running references regularly.', seats: '3 seats',
-    features: ['3 seats', 'Everything in Free', 'Team management & invites', 'Admin oversight & records', 'Email support'], cta: 'Choose Starter' },
+    features: ['3 seats', 'Everything in Free', 'Team management', 'Reference records archive', 'Email support'], cta: 'Choose Starter' },
   { name: 'Growth', price: '£149', unit: '/mo', sub: 'For busy departments and growing agencies.', featured: true, seats: '10 seats',
-    features: ['10 seats', 'Everything in Starter', 'API access', 'White-label references', 'Pay-as-you-go credits', 'Priority support'], cta: 'Choose Growth' },
+    features: ['10 seats', 'Everything in Starter', 'Admin oversight & usage', 'Pay-as-you-go credits', 'Priority support'], cta: 'Choose Growth' },
   { name: 'Business', price: '£299', unit: '/mo', sub: 'For large teams and multi-branch agencies.', seats: '25 seats',
-    features: ['25 seats', 'Everything in Growth', 'Onboarding support', 'Priority support'], cta: 'Choose Business' },
+    features: ['25 seats', 'Everything in Growth', 'API access', 'Advanced reporting', 'Onboarding help'], cta: 'Choose Business' },
 ];
 
 export default function Pricing() {
