@@ -114,6 +114,7 @@ class AiAnalyseIn(BaseModel):
     content: dict
     assignment_context: str | None = None
     vertical: str | None = None
+    vertical: str | None = None
 
 
 class ShareMessageIn(BaseModel):
