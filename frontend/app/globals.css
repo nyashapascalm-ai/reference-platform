@@ -177,24 +177,25 @@ button:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}
 @media print {
   @page { margin: 18mm; }
   html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-  body * { visibility: hidden; }
-  .received-detail, .received-detail * { visibility: visible; }
+
+  /* hide everything visually, but keep layout (so nested .received-detail still renders) */
+  body * { visibility: hidden !important; }
+  .received-detail, .received-detail * { visibility: visible !important; }
+
+  /* pull the detail out and centre it with symmetric insets + auto margins */
   .received-detail {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    margin: 0 auto !important;
-    width: 100% !important;
-    max-width: 170mm;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    width: auto !important;
+    max-width: 165mm !important;
     padding: 0 !important;
-    box-sizing: border-box;
+    box-sizing: border-box !important;
   }
-  .received-detail > div {
-    border: none !important;
-    padding: 0 !important;
-  }
+  .received-detail > div { border: none !important; padding: 0 !important; }
   .no-print { display: none !important; }
-  .print-only { display: inline !important; }
   .received-detail button { display: none !important; }
 }

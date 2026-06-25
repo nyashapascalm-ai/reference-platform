@@ -1,0 +1,27 @@
+
+/* ---- Print: clean, centred PDF of a received reference ---- */
+@media print {
+  @page { margin: 18mm; }
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+
+  /* hide everything visually, but keep layout (so nested .received-detail still renders) */
+  body * { visibility: hidden !important; }
+  .received-detail, .received-detail * { visibility: visible !important; }
+
+  /* pull the detail out and centre it with symmetric insets + auto margins */
+  .received-detail {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    width: auto !important;
+    max-width: 165mm !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .received-detail > div { border: none !important; padding: 0 !important; }
+  .no-print { display: none !important; }
+  .received-detail button { display: none !important; }
+}
