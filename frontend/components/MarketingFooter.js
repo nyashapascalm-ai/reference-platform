@@ -24,6 +24,8 @@ export default function MarketingFooter() {
             <h4>Company</h4>
             <Link href="/contact">Contact</Link>
             <a href="mailto:support@reffolio.co.uk">Support</a>
+            <Link href="/privacy">Privacy</Link>
+            <a href="mailto:support@reffolio.co.uk?subject=DPA%20request">DPA (on request)</a>
             <Link href="/signin">Sign in</Link>
           </div>
           <div>
