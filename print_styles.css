@@ -1,0 +1,10 @@
+
+/* ---- Print: clean PDF of a received reference ---- */
+@media print {
+  body * { visibility: hidden; }
+  .received-detail, .received-detail * { visibility: visible; }
+  .received-detail { position: absolute; left: 0; top: 0; width: 100%; padding: 24px; }
+  .no-print { display: none !important; }
+  .print-only { display: inline !important; }
+  .received-detail button { display: none !important; }
+}

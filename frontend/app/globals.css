@@ -172,3 +172,13 @@ button:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}
   border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;font-family:var(--font-body)}
 .help-close:hover{background:var(--danger);color:#fff}
 .help-text b{color:var(--text)}
+
+/* ---- Print: clean PDF of a received reference ---- */
+@media print {
+  body * { visibility: hidden; }
+  .received-detail, .received-detail * { visibility: visible; }
+  .received-detail { position: absolute; left: 0; top: 0; width: 100%; padding: 24px; }
+  .no-print { display: none !important; }
+  .print-only { display: inline !important; }
+  .received-detail button { display: none !important; }
+}
