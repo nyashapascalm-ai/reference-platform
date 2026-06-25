@@ -48,15 +48,26 @@ def _json(obj):
 
 # ---- email bodies ------------------------------------------------------------
 def request_email_html(*, candidate, requester_org, referee_name, link, message):
-    greeting = f"Dear {referee_name}," if referee_name else "Hello,"
-    extra = f"<p>{message}</p>" if message else ""
+    """If `message` is a custom/AI-drafted body, use it as the main content;
+    otherwise fall back to the default wording. Reffolio always adds the secure
+    link button + footer below the body."""
+    import html as _html
+    if message and message.strip():
+        # custom body: preserve the author's line breaks, escape HTML
+        custom_body = "".join(f"<p>{_html.escape(line)}</p>" if line.strip() else "<br>"
+                              for line in message.strip().split("\n"))
+        body_html = custom_body
+    else:
+        greeting = f"Dear {referee_name}," if referee_name else "Hello,"
+        body_html = (
+            f"<p>{greeting}</p>"
+            f"<p><b>{requester_org}</b> has requested an employment reference for "
+            f"<b>{candidate}</b>, who has named you as a referee from a previous role.</p>"
+        )
     return f"""
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1a1a2e">
         <h2 style="color:#6C5CE7">Reference request</h2>
-        <p>{greeting}</p>
-        <p><b>{requester_org}</b> has requested an employment reference for
-           <b>{candidate}</b>, who has named you as a referee from a previous role.</p>
-        {extra}
+        {body_html}
         <p>You can complete it securely online \u2014 no account needed. It takes a few minutes.</p>
         <p><a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;
            text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">

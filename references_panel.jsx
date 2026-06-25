@@ -26,6 +26,7 @@ function RequestForm({ me, onSent }) {
   const [templateId, setTemplateId] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
 
   useEffect(() => {
@@ -35,6 +36,18 @@ function RequestForm({ me, onSent }) {
       if (care) setTemplateId(care.id);
     }).catch(() => {});
   }, []);
+
+  async function draftEmail() {
+    if (!workerName.trim()) { setErr(true); setMsg('Enter the candidate name first.'); return; }
+    setDrafting(true); setMsg(''); setErr(false);
+    try {
+      const r = await api('/requests/draft-email', { method: 'POST', body: {
+        worker_name: workerName, referee_name: refereeName || null,
+        prev_employer_name: prevEmployer || null, template_id: templateId || null,
+      } });
+      setMessage(r.body || '');
+    } catch (e) { setErr(true); setMsg(e.message); } finally { setDrafting(false); }
+  }
 
   async function send() {
     setBusy(true); setMsg(''); setErr(false);
@@ -68,8 +81,10 @@ function RequestForm({ me, onSent }) {
       <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
         {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
       </select>
-      <label>Message (optional)</label>
-      <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder="A short note to the referee" />
+      <label>Covering email</label>
+      <button type="button" className="ghost" style={{ marginTop: 0, marginBottom: 6 }}
+        onClick={draftEmail} disabled={drafting}>{drafting ? 'Drafting\u2026' : 'Generate email with AI'}</button>
+      <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={8} placeholder="Write a note to the referee, or generate one with AI. The secure link is added automatically." />
       <p className="muted" style={{ marginTop: 8 }}>The referee completes it on a secure link {'\u2014'} no account needed. The candidate is then asked to consent before the reference is released to you. Attachments are coming soon.</p>
       <button onClick={send} disabled={busy || !valid} style={{ marginTop: 10 }}>{busy ? 'Sending…' : 'Send request'}</button>
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
