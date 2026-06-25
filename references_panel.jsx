@@ -19,6 +19,7 @@ function ReferencesPanel({ me }) {
 function RequestForm({ me, onSent }) {
   const [templates, setTemplates] = useState([]);
   const [workerName, setWorkerName] = useState('');
+  const [workerEmail, setWorkerEmail] = useState('');
   const [prevEmployer, setPrevEmployer] = useState('');
   const [refereeName, setRefereeName] = useState('');
   const [refereeEmail, setRefereeEmail] = useState('');
@@ -39,22 +40,24 @@ function RequestForm({ me, onSent }) {
     setBusy(true); setMsg(''); setErr(false);
     try {
       const r = await api('/requests', { method: 'POST', body: {
-        worker_name: workerName, prev_employer_name: prevEmployer || null,
+        worker_name: workerName, worker_email: workerEmail, prev_employer_name: prevEmployer || null,
         referee_name: refereeName || null, referee_email: refereeEmail,
         template_id: templateId || null, message: message || null,
       } });
       setErr(false);
       setMsg(r.email_sent ? 'Request sent — the referee has been emailed a secure link.' : 'Request created, but the email could not be sent. Check the address.');
-      setWorkerName(''); setPrevEmployer(''); setRefereeName(''); setRefereeEmail(''); setMessage('');
+      setWorkerName(''); setWorkerEmail(''); setPrevEmployer(''); setRefereeName(''); setRefereeEmail(''); setMessage('');
       if (r.email_sent && onSent) setTimeout(onSent, 1200);
     } catch (e) { setErr(true); setMsg(e.message); } finally { setBusy(false); }
   }
 
-  const valid = workerName.trim() && refereeEmail.includes('@');
+  const valid = workerName.trim() && workerEmail.includes('@') && refereeEmail.includes('@');
   return (
     <div>
       <label>Candidate name *</label>
       <input value={workerName} onChange={(e) => setWorkerName(e.target.value)} placeholder="The person you’re hiring" />
+      <label>Candidate email *</label>
+      <input value={workerEmail} onChange={(e) => setWorkerEmail(e.target.value)} placeholder="candidate@email.com" />
       <label>Previous employer</label>
       <input value={prevEmployer} onChange={(e) => setPrevEmployer(e.target.value)} placeholder="e.g. Sunrise Care Ltd" />
       <label>Referee name</label>
@@ -67,7 +70,7 @@ function RequestForm({ me, onSent }) {
       </select>
       <label>Message (optional)</label>
       <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder="A short note to the referee" />
-      <p className="muted" style={{ marginTop: 8 }}>The referee completes it on a secure link {'\u2014'} no account needed. Attachments are coming soon.</p>
+      <p className="muted" style={{ marginTop: 8 }}>The referee completes it on a secure link {'\u2014'} no account needed. The candidate is then asked to consent before the reference is released to you. Attachments are coming soon.</p>
       <button onClick={send} disabled={busy || !valid} style={{ marginTop: 10 }}>{busy ? 'Sending…' : 'Send request'}</button>
       {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
     </div>

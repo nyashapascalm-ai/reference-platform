@@ -95,3 +95,39 @@ def worker_notice_html(*, candidate, requester_org, ref_number):
         <p>You can create a free Reffolio account to see references about you and manage your consent.</p>
         <p style="font-size:12px;color:#999;margin-top:24px">Reffolio \u2014 verified, tamper-evident references.</p>
       </div>"""
+
+
+# ---- consent (hold-release) email bodies -------------------------------------
+def consent_request_html(*, candidate, requester_org, referee_name, ref_number, link):
+    return f"""
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1a1a2e">
+        <h2 style="color:#6C5CE7">A reference about you needs your consent</h2>
+        <p>Hello {candidate},</p>
+        <p>{("" + referee_name + " at ") if referee_name else ""}a previous employer has completed an
+           employment reference about you, requested by <b>{requester_org}</b>.</p>
+        <p>Your permanent reference number is <b>{ref_number}</b> \u2014 keep it. In future you can ask a
+           previous employer to send this same reference to a new employer using this number.</p>
+        <p>This reference will <b>not</b> be shared with {requester_org} until you consent. Please review and decide:</p>
+        <p><a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;text-decoration:none;
+           padding:12px 22px;border-radius:8px;font-weight:600">Review and decide</a></p>
+        <p style="font-size:12px;color:#999;margin-top:24px">Reffolio \u2014 you control who sees your references.</p>
+      </div>"""
+
+
+def consent_granted_html(*, candidate, ref_number, link):
+    return f"""
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1a1a2e">
+        <h2 style="color:#6C5CE7">Reference now available</h2>
+        <p>{candidate} has consented. The reference (<b>{ref_number}</b>) is now in your Received references.</p>
+        <p><a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;text-decoration:none;
+           padding:12px 22px;border-radius:8px;font-weight:600">View in Reffolio</a></p>
+      </div>"""
+
+
+def consent_declined_html(*, candidate, ref_number):
+    return f"""
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1a1a2e">
+        <h2 style="color:#6C5CE7">Candidate declined consent</h2>
+        <p>{candidate} has declined to release the reference (<b>{ref_number}</b>).
+           It will not be shared. You may wish to follow up with the candidate directly.</p>
+      </div>"""

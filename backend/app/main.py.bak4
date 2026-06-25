@@ -1625,7 +1625,6 @@ SITE_URL = os.environ.get("SITE_URL", "https://reffolio.co.uk")
 
 class RequestCreateIn(BaseModel):
     worker_name: str
-    worker_email: str
     referee_email: str
     referee_name: str | None = None
     prev_employer_name: str | None = None
@@ -1647,11 +1646,8 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
     """A hiring provider requests a reference about a candidate from a previous employer."""
     org_id = actor["org_id"]
     referee_email = body.referee_email.strip().lower()
-    worker_email = body.worker_email.strip().lower()
     if "@" not in referee_email:
         raise HTTPException(422, "a valid referee email is required")
-    if "@" not in worker_email:
-        raise HTTPException(422, "a valid candidate email is required")
     domain = referee_email.split("@")[-1]
     free_mail = domain in {"gmail.com", "outlook.com", "hotmail.com", "yahoo.com",
                            "icloud.com", "live.com", "aol.com", "me.com"}
@@ -1663,13 +1659,13 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
         req = await c.fetchrow(
             """
             insert into reference_requests
-              (requester_org_id, requested_by, worker_name, worker_email, prev_employer_name,
+              (requester_org_id, requested_by, worker_name, prev_employer_name,
                referee_name, referee_email, referee_email_domain, domain_verified,
                template_id, link_token_hash, message)
-            values ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            values ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             returning id
             """,
-            org_id, actor["user_id"], body.worker_name.strip(), worker_email, body.prev_employer_name,
+            org_id, actor["user_id"], body.worker_name.strip(), body.prev_employer_name,
             body.referee_name, referee_email, domain, (not free_mail),
             body.template_id, thash, body.message,
         )
@@ -1805,14 +1801,13 @@ async def complete_request(token: str, body: RequestCompleteIn, request: Request
             "produced_reference_id=$2, worker_id=$3 where id=$1",
             req["id"], ref_id, worker_id,
         )
-        # HOLD RELEASE: create the send as pending with a worker consent token.
-        consent_raw, consent_thash = new_share_token()
+        # Create the send into the requester's Received references.
         await c.execute(
             """insert into reference_sends
                  (reference_id, reference_version, sender_org_id, recipient_org_id,
-                  recipient_email, recipient_name, consent_status, consent_token_hash, delivered_at)
-               values ($1, 1, $2, $2, $3, $4, 'pending', $5, now())""",
-            ref_id, org_id, ref_email, req["worker_name"], consent_thash,
+                  recipient_email, recipient_name, consent_status, delivered_at)
+               values ($1, 1, $2, $2, $3, $4, 'pending', now())""",
+            ref_id, org_id, ref_email, req["worker_name"],
         )
         await add_event(c, event_type="completed", reference_id=ref_id, request_id=req["id"],
                        actor_name=ref_name, actor_email=ref_email,
@@ -1823,17 +1818,10 @@ async def complete_request(token: str, body: RequestCompleteIn, request: Request
 
         org = await c.fetchrow("select name from orgs where id = $1", org_id)
 
-    # HOLD RELEASE: email the WORKER for consent; the requester is NOT notified until consent is granted.
-    from .requests_mod import consent_request_html
-    consent_link = f"{SITE_URL}/consent/{consent_raw}"
-    if req["worker_email"]:
-        await email.send_email(
-            req["worker_email"],
-            f"Your consent is needed for a reference ({ref_number})",
-            consent_request_html(candidate=req["worker_name"], requester_org=org["name"],
-                                referee_name=ref_name, ref_number=ref_number, link=consent_link),
-        )
-    return {"reference_id": str(ref_id), "ref_number": ref_number, "status": "awaiting_consent"}
+    # Notify requester + worker (best-effort).
+    await _notify_completion(org_id, req["worker_name"], ref_email, ref_name, ref_number, org["name"])
+
+    return {"reference_id": str(ref_id), "ref_number": ref_number, "status": "published"}
 
 
 async def _requester_email(org_id):
@@ -1874,96 +1862,14 @@ async def my_requests(actor=Depends(require_org_actor)):
             """select s.id, s.reference_id, s.recipient_name as worker_name, s.consent_status,
                       s.created_at, r.ref_number, r.content_hash
                from reference_sends s join "references" r on r.id = s.reference_id
-               where s.recipient_org_id = $1 and s.consent_status = 'granted'
+               where s.recipient_org_id = $1
                order by s.created_at desc""",
             org_id,
         )
-        # consent status per sent request (so the requester sees why a reference isn't available yet)
-        consent_rows = await c.fetch(
-            """select req.id as request_id, s.consent_status
-               from reference_requests req
-               join reference_sends s on s.reference_id = req.produced_reference_id
-               where req.requester_org_id = $1""",
-            org_id,
-        )
-        consent_by_req = {str(r["request_id"]): r["consent_status"] for r in consent_rows}
     return {
         "sent": [dict(x) | {"id": str(x["id"]),
-                            "produced_reference_id": str(x["produced_reference_id"]) if x["produced_reference_id"] else None,
-                            "consent_status": consent_by_req.get(str(x["id"]))}
+                            "produced_reference_id": str(x["produced_reference_id"]) if x["produced_reference_id"] else None}
                  for x in sent],
         "received": [dict(x) | {"id": str(x["id"]), "reference_id": str(x["reference_id"])}
                      for x in received],
     }
-
-
-
-# ---- Worker consent (hold-release) ------------------------------------------
-@app.get("/consent/{token}")
-async def consent_view(token: str, request: Request):
-    """Public: the worker opens their consent link."""
-    async with db.pool().acquire() as c:
-        row = await c.fetchrow(
-            '''select s.id, s.consent_status, s.recipient_name as worker_name, r.ref_number,
-                      o.name as requester_org
-               from reference_sends s
-               join "references" r on r.id = s.reference_id
-               join orgs o on o.id = s.recipient_org_id
-               where s.consent_token_hash = $1''',
-            token_hash(token),
-        )
-        if not row:
-            raise HTTPException(404, "this consent link is not valid")
-    return {
-        "worker_name": row["worker_name"],
-        "requester_org": row["requester_org"],
-        "ref_number": row["ref_number"],
-        "consent_status": row["consent_status"],
-    }
-
-
-class ConsentDecisionIn(BaseModel):
-    decision: str  # 'grant' | 'decline'
-
-
-@app.post("/consent/{token}")
-async def consent_decide(token: str, body: ConsentDecisionIn, request: Request):
-    """Public: the worker grants or declines. On grant, the reference releases to the requester."""
-    if body.decision not in ("grant", "decline"):
-        raise HTTPException(422, "decision must be 'grant' or 'decline'")
-    new_status = "granted" if body.decision == "grant" else "declined"
-    async with db.pool().acquire() as c:
-        row = await c.fetchrow(
-            '''select s.id, s.reference_id, s.consent_status, s.recipient_name as worker_name,
-                      r.ref_number, s.recipient_org_id
-               from reference_sends s join "references" r on r.id = s.reference_id
-               where s.consent_token_hash = $1''',
-            token_hash(token),
-        )
-        if not row:
-            raise HTTPException(404, "this consent link is not valid")
-        if row["consent_status"] != "pending":
-            raise HTTPException(409, "a decision has already been recorded")
-        await c.execute(
-            "update reference_sends set consent_status=$2, consent_decided_at=now() where id=$1",
-            row["id"], new_status,
-        )
-        await add_event(c, event_type=("consent_granted" if new_status == "granted" else "consent_declined"),
-                       reference_id=row["reference_id"],
-                       actor_name=row["worker_name"], detail={"ref_number": row["ref_number"]},
-                       ip_address=request.client.host if request.client else None)
-        org = await c.fetchrow("select name from orgs where id=$1", row["recipient_org_id"])
-        admin = await c.fetchrow(
-            "select email from profiles where org_id=$1 and role='org_admin' order by created_at limit 1",
-            row["recipient_org_id"])
-    # Notify the requester of the outcome.
-    if admin and admin["email"]:
-        from .requests_mod import consent_granted_html, consent_declined_html
-        if new_status == "granted":
-            await email.send_email(admin["email"], f"Reference now available ({row['ref_number']})",
-                consent_granted_html(candidate=row["worker_name"], ref_number=row["ref_number"],
-                                    link=f"{SITE_URL}/dashboard"))
-        else:
-            await email.send_email(admin["email"], f"Candidate declined consent ({row['ref_number']})",
-                consent_declined_html(candidate=row["worker_name"], ref_number=row["ref_number"]))
-    return {"consent_status": new_status, "ref_number": row["ref_number"]}
