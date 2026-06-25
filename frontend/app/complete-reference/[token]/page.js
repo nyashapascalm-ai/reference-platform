@@ -21,6 +21,9 @@ export default function CompleteReferencePage() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  const brandColor = info?.brand_color || 'var(--violet, #6C5CE7)';
+  const logoUrl = info?.logo_url || null;
+
   const fields = (info?.template?.field_schema?.fields && info.template.field_schema.fields.length)
     ? info.template.field_schema.fields
     : ((info?.template?.field_schema?.required) || []).map((k) => ({ key: k, label: k, type: 'text' }));
@@ -68,6 +71,8 @@ export default function CompleteReferencePage() {
 
   return (
     <div className="wrap">
+      {logoUrl ? <img src={logoUrl} alt="" style={{ maxHeight: 52, maxWidth: 180, marginBottom: 10 }} /> : null}
+      <div style={{ height: 4, background: brandColor, borderRadius: 2, marginBottom: 14 }} />
       <h1>Complete a reference</h1>
       <p className="muted">
         <b style={{ color: 'var(--text)' }}>{info?.requester_org}</b> has requested an employment reference
@@ -134,7 +139,7 @@ export default function CompleteReferencePage() {
           By submitting, you confirm this reference is true and accurate to the best of your knowledge.
           It will be recorded with a tamper-evident timestamp and an audit trail.
         </p>
-        <button onClick={submit} disabled={busy}>{busy ? 'Submitting\u2026' : 'Submit reference'}</button>
+        <button onClick={submit} disabled={busy} style={{ background: brandColor }}>{busy ? 'Submitting\u2026' : 'Submit reference'}</button>
         {error && <div className="msg err">{error}</div>}
       </div>
     </div>

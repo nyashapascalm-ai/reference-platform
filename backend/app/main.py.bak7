@@ -1659,7 +1659,7 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
     link = f"{SITE_URL}/complete-reference/{raw}"
 
     async with db.pool().acquire() as c:
-        org = await c.fetchrow("select name, brand_color, logo_url, email_signature from orgs where id = $1", org_id)
+        org = await c.fetchrow("select name from orgs where id = $1", org_id)
         req = await c.fetchrow(
             """
             insert into reference_requests
@@ -1684,9 +1684,7 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
         f"Reference request for {body.worker_name.strip()}",
         request_email_html(candidate=body.worker_name.strip(),
                           requester_org=org["name"], referee_name=body.referee_name,
-                          link=link, message=body.message,
-                          brand_color=org["brand_color"], logo_url=org["logo_url"],
-                          signature=org["email_signature"]),
+                          link=link, message=body.message),
     )
     return {"request_id": str(req["id"]), "email_sent": sent,
             "domain_verified": (not free_mail)}
@@ -1699,8 +1697,7 @@ async def open_request(token: str, request: Request):
         req = await c.fetchrow(
             """
             select r.id, r.worker_name, r.prev_employer_name, r.referee_name,
-                   r.status, r.template_id, r.message, o.name as requester_org,
-                   o.brand_color, o.logo_url
+                   r.status, r.template_id, r.message, o.name as requester_org
             from reference_requests r join orgs o on o.id = r.requester_org_id
             where r.link_token_hash = $1
             """,
@@ -1725,8 +1722,6 @@ async def open_request(token: str, request: Request):
         "prev_employer_name": req["prev_employer_name"],
         "referee_name": req["referee_name"],
         "requester_org": req["requester_org"],
-        "brand_color": req["brand_color"],
-        "logo_url": req["logo_url"],
         "message": req["message"],
         "template": ({"id": str(tpl["id"]), "name": tpl["name"], "vertical": tpl["vertical"],
                       "field_schema": tpl["field_schema"]} if tpl else None),
