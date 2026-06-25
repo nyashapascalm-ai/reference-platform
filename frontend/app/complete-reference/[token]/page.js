@@ -108,6 +108,14 @@ export default function CompleteReferencePage() {
               </div>
             );
           }
+          if (f.type === 'date') {
+            return (
+              <div key={f.key}>
+                {lbl}
+                <input type="date" value={val} onChange={(e) => setField(f.key, e.target.value)} />
+              </div>
+            );
+          }
           if (f.type === 'select' && Array.isArray(f.options)) {
             return (
               <div key={f.key}>

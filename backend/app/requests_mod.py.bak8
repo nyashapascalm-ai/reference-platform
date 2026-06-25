@@ -66,7 +66,7 @@ def _branded_shell(*, inner_html, brand_color=None, logo_url=None, signature=Non
       </div>"""
 
 def request_email_html(*, candidate, requester_org, referee_name, link, message,
-                       brand_color=None, logo_url=None, signature=None, company_address=None):
+                       brand_color=None, logo_url=None, signature=None):
     """If `message` is a custom/AI-drafted body, use it as the main content;
     otherwise fall back to the default wording. Branded with the org's colour,
     logo and signature where provided."""
@@ -91,10 +91,7 @@ def request_email_html(*, candidate, requester_org, referee_name, link, message,
         f'Complete the reference</a></p>'
         f'<p style="font-size:13px;color:#666">If the button does not work, paste this link:<br>{link}</p>'
     )
-    sig_with_addr = signature or ""
-    if company_address:
-        sig_with_addr = (sig_with_addr + "\n" if sig_with_addr else "") + company_address
-    return _branded_shell(inner_html=inner, brand_color=brand_color, logo_url=logo_url, signature=sig_with_addr)
+    return _branded_shell(inner_html=inner, brand_color=brand_color, logo_url=logo_url, signature=signature)
 
 
 def received_email_html(*, candidate, referee_name, ref_number, link):
