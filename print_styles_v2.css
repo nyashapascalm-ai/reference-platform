@@ -1,0 +1,26 @@
+
+/* ---- Print: clean, centred PDF of a received reference ---- */
+@media print {
+  @page { margin: 18mm; }
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  body * { visibility: hidden; }
+  .received-detail, .received-detail * { visibility: visible; }
+  .received-detail {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 170mm;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+  .received-detail > div {
+    border: none !important;
+    padding: 0 !important;
+  }
+  .no-print { display: none !important; }
+  .print-only { display: inline !important; }
+  .received-detail button { display: none !important; }
+}
