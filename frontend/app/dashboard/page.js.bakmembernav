@@ -154,7 +154,8 @@ export default function Dashboard() {
       nav.push({ id: 'orgsetup', icon: 'shield', label: 'Organisation' });
       nav.push({ id: 'apikeys', icon: 'chart', label: 'API' });
     } else {
-      /* member: minimal nav — References only (added below for all members) */
+      nav.push({ id: 'team', icon: 'team', label: 'Team' });
+      nav.push({ id: 'billing', icon: 'billing', label: 'Billing' });
     }
     // tiles.push({ id: 'issue', icon: 'ref', title: 'Generate a reference', desc: 'Compose, AI-review and publish a verified reference.' });
     if (isAdmin) {
@@ -164,7 +165,8 @@ export default function Dashboard() {
       tiles.push({ id: 'orgsetup', icon: 'shield', title: 'Organisation setup', desc: 'Set your organisation type and contact details.' });
       tiles.push({ id: 'apikeys', icon: 'chart', title: 'API access', desc: 'Generate keys to connect your own systems.' });
     } else {
-      /* member: no admin tiles */
+      tiles.push({ id: 'team', icon: 'team', title: 'Team', desc: 'See your organisation\u2019s members.' });
+      tiles.push({ id: 'billing', icon: 'billing', title: 'Billing', desc: 'View plan and seats.' });
     }
     // member-visible: References (everyone in the org; member's list is scoped server-side)
     nav.push({ id: 'requests', icon: 'ref', label: 'References' });
