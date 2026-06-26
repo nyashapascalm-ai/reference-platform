@@ -1720,17 +1720,6 @@ async def open_request(token: str, request: Request):
             await c.execute("update reference_requests set status='opened', opened_at=now() where id=$1", req["id"])
             await add_event(c, event_type="opened", request_id=req["id"],
                            ip_address=request.client.host if request.client else None)
-            try:
-                _adm = await c.fetchrow(
-                    "select p.email, rr.referee_name, rr.worker_name from reference_requests rr "
-                    "join profiles p on p.id = rr.requested_by where rr.id = $1", req["id"])
-                if _adm and _adm["email"]:
-                    from .requests_mod import referee_opened_html
-                    await email.send_email(
-                        _adm["email"], f"Your reference request for {_adm['worker_name']} was opened",
-                        referee_opened_html(candidate=_adm["worker_name"], referee_name=_adm["referee_name"]))
-            except Exception:
-                pass
     return {
         "worker_name": req["worker_name"],
         "prev_employer_name": req["prev_employer_name"],
@@ -1840,7 +1829,7 @@ async def complete_request(token: str, body: RequestCompleteIn, request: Request
         org = await c.fetchrow("select name from orgs where id = $1", org_id)
 
     # HOLD RELEASE: email the WORKER for consent; the requester is NOT notified until consent is granted.
-    from .requests_mod import consent_request_html, referee_submitted_html, completed_awaiting_consent_html
+    from .requests_mod import consent_request_html
     consent_link = f"{SITE_URL}/consent/{consent_raw}"
     if req["worker_email"]:
         await email.send_email(
@@ -1849,29 +1838,6 @@ async def complete_request(token: str, body: RequestCompleteIn, request: Request
             consent_request_html(candidate=req["worker_name"], requester_org=org["name"],
                                 referee_name=ref_name, ref_number=ref_number, link=consent_link),
         )
-    # Notify the referee that their submission was received.
-    try:
-        if ref_email:
-            await email.send_email(
-                ref_email, f"Thank you \u2014 reference submitted ({ref_number})",
-                referee_submitted_html(candidate=req["worker_name"], requester_org=org["name"],
-                                       ref_number=ref_number))
-    except Exception:
-        pass
-    # Notify the requester that the reference is completed and awaiting consent.
-    try:
-        async with db.pool().acquire() as _c2:
-            _orow = await _c2.fetchrow(
-                "select requester_org_id, worker_name from reference_requests where link_token_hash = $1",
-                token_hash(token))
-        _radm = await _requester_email(_orow["requester_org_id"]) if _orow else None
-        if _radm:
-            await email.send_email(
-                _radm, f"Reference completed for {req['worker_name']} \u2014 awaiting consent",
-                completed_awaiting_consent_html(candidate=req["worker_name"], referee_name=ref_name,
-                                                ref_number=ref_number))
-    except Exception:
-        pass
     return {"reference_id": str(ref_id), "ref_number": ref_number, "status": "awaiting_consent"}
 
 
@@ -2002,20 +1968,6 @@ async def consent_decide(token: str, body: ConsentDecisionIn, request: Request):
             await email.send_email(admin["email"], f"Reference now available ({row['ref_number']})",
                 consent_granted_html(candidate=row["worker_name"], ref_number=row["ref_number"],
                                     link=f"{SITE_URL}/dashboard"))
-            try:
-                _w = await c.fetchrow(
-                    "select rr.worker_email, o.name as org_name from reference_sends s "
-                    "join reference_requests rr on rr.produced_reference_id = s.reference_id "
-                    "join orgs o on o.id = s.recipient_org_id where s.consent_token_hash = $1",
-                    token_hash(token))
-                if _w and _w["worker_email"]:
-                    from .requests_mod import consent_confirmed_html
-                    await email.send_email(
-                        _w["worker_email"], f"Consent recorded ({row['ref_number']})",
-                        consent_confirmed_html(candidate=row["worker_name"], requester_org=_w["org_name"],
-                                               ref_number=row["ref_number"]))
-            except Exception:
-                pass
         else:
             await email.send_email(admin["email"], f"Candidate declined consent ({row['ref_number']})",
                 consent_declined_html(candidate=row["worker_name"], ref_number=row["ref_number"]))
@@ -2297,30 +2249,6 @@ async def received_detail(reference_id: UUID, actor=Depends(require_org_actor)):
             "where reference_id = $1 or request_id in "
             "(select id from reference_requests where produced_reference_id = $1) order by created_at",
             reference_id)
-    # Notify the worker that their consented reference was viewed (best-effort, deduped per org/day).
-    try:
-        async with db.pool().acquire() as _vc:
-            _already = await _vc.fetchrow(
-                "select 1 from reference_events where reference_id = $1 and event_type = 'viewed' "
-                "and actor_org_id = $2 and created_at > now() - interval '1 day'",
-                reference_id, actor["org_id"])
-            if not _already:
-                await add_event(_vc, event_type="viewed", reference_id=reference_id,
-                                actor_org_id=actor["org_id"], actor_id=actor.get("user_id"),
-                                actor_email=actor.get("email"))
-                _w = await _vc.fetchrow(
-                    'select rr.worker_email, o.name as org_name '
-                    'from reference_requests rr join orgs o on o.id = $2 '
-                    'where rr.produced_reference_id = $1 limit 1', reference_id, actor["org_id"])
-                if _w and _w["worker_email"]:
-                    from .requests_mod import reference_viewed_html
-                    await email.send_email(
-                        _w["worker_email"], f"Your reference was viewed ({ref['ref_number']})",
-                        reference_viewed_html(candidate=ref["worker_name"], requester_org=_w["org_name"],
-                                              ref_number=ref["ref_number"]))
-    except Exception:
-        pass
-
     return {
         "id": str(ref["id"]),
         "ref_number": ref["ref_number"],
