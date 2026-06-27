@@ -12,25 +12,25 @@ export default function Landing() {
       <header className="mk-hero">
         <div className="mk-container mk-hero-grid">
           <div>
-            <span className="mk-eyebrow">● Verified references for safer recruitment</span>
-            <h1>References your CQC inspector will trust.</h1>
+            <span className="mk-eyebrow">● Verified references for regulated hiring</span>
+            <h1>References you can trust, across every regulated sector.</h1>
             <p className="mk-lede">
               Reffolio lets regulated employers request employment references, collect them on a
-              secure sector-specific form, and store them as verified, tamper-evident records —
+              secure form built for your sector, and store them as verified, tamper-evident records —
               with a full audit trail and the candidate&rsquo;s consent. Inspection-ready, every time.
             </p>
             <div className="mk-hero-actions">
               <Link href="/signin" className="mk-btn mk-btn-primary mk-btn-lg">Start 14-day trial</Link>
               <Link href="/#how" className="mk-btn mk-btn-ghost mk-btn-lg">See how it works</Link>
             </div>
-            <p className="mk-hero-note">No card to start · Built for care, health, education &amp; social work · UK data protection.</p>
+            <p className="mk-hero-note">No card to start · Built for care, healthcare, education &amp; social work · UK data protection.</p>
           </div>
 
           <div className="mk-card-visual">
-            <div className="mk-chip mk-chip-1"><span className="ic" /> CQC-ready form</div>
+            <div className="mk-chip mk-chip-1"><span className="ic" /> Sector-specific form</div>
             <div className="mk-refcard">
               <div className="mk-refcard-top">
-                <div className="mk-refcard-org"><span className="dot" /> Barchester Council</div>
+                <div className="mk-refcard-org"><span className="dot" /> Verified employer</div>
                 <span className="mk-verified">✓ Received</span>
               </div>
               <div className="mk-refcard-body">
@@ -69,7 +69,7 @@ export default function Landing() {
             <div className="mk-feature">
               <div className="mk-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
               <h3>Tamper-evident</h3>
-              <p>Every completed reference is sealed with a cryptographic hash and a permanent reference number. Any change is detectable — a record you can stand behind in an inspection.</p>
+              <p>Every completed reference is sealed with a cryptographic hash and a permanent reference number. Any change is detectable — a record you can stand behind in an audit or inspection.</p>
             </div>
             <div className="mk-feature">
               <div className="mk-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-2-2"/></svg></div>
@@ -89,7 +89,7 @@ export default function Landing() {
           </div>
           <div className="mk-steps">
             <div className="mk-step"><div className="mk-num">1</div><h3>Request a reference</h3><p>Enter the candidate and their previous employer. Reffolio emails the referee a secure link with your logo and an AI-drafted covering note.</p></div>
-            <div className="mk-step"><div className="mk-num">2</div><h3>They complete the form</h3><p>The previous employer fills in a sector-specific form (CQC care, KCSIE, NMC/HCPC and more) on the link — no account needed.</p></div>
+            <div className="mk-step"><div className="mk-num">2</div><h3>They complete the form</h3><p>The previous employer fills in a form built for your sector — care, healthcare, education or social work — on the link, no account needed.</p></div>
             <div className="mk-step"><div className="mk-num">3</div><h3>The candidate consents</h3><p>Before release, the candidate approves sharing the reference with you — recorded with a timestamp in the audit trail.</p></div>
             <div className="mk-step"><div className="mk-num">4</div><h3>You receive the record</h3><p>The reference lands in your account: verified, hashed, with a reference number and downloadable PDF — ready for inspection.</p></div>
           </div>
@@ -99,27 +99,27 @@ export default function Landing() {
       <section className="mk-section" id="why">
         <div className="mk-container">
           <div className="mk-section-head">
-            <div className="mk-kicker">Why Reffolio</div>
-            <h2>Built for regulated hiring</h2>
-            <p>One verified record, the way your sector needs it.</p>
+            <div className="mk-kicker">Who it's for</div>
+            <h2>One platform, every regulated sector</h2>
+            <p>The same verified, consented, audit-trailed record — on the form your sector expects.</p>
           </div>
           <div className="mk-split">
             <div className="mk-aud">
-              <h3><span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--grad)', display: 'inline-block' }} /> Care &amp; health providers</h3>
+              <h3><span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--grad)', display: 'inline-block' }} /> Care &amp; healthcare</h3>
               <ul>
-                <li>References on a real CQC / NMC / HCPC-shaped form</li>
-                <li>Safeguarding question answered on every reference</li>
+                <li>Forms shaped for CQC, NMC and HCPC expectations</li>
+                <li>Safeguarding question on every reference</li>
                 <li>Tamper-evident, audit-trailed records for inspection</li>
-                <li>Your logo and colours on every request you send</li>
+                <li>Suitable-to-work-with confirmation built in</li>
               </ul>
             </div>
             <div className="mk-aud">
-              <h3><span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--grad)', display: 'inline-block' }} /> Councils &amp; schools</h3>
+              <h3><span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--grad)', display: 'inline-block' }} /> Education &amp; social work</h3>
               <ul>
-                <li>KCSIE safer-recruitment and statutory forms built in</li>
+                <li>KCSIE safer-recruitment and Social Work England aligned</li>
+                <li>Schools, MATs, local authorities and trusts</li>
                 <li>Per-member access — staff see only their own requests</li>
                 <li>Admin oversight of the whole organisation&rsquo;s records</li>
-                <li>Records that survive a manager moving on</li>
               </ul>
             </div>
             <div className="mk-aud">
@@ -141,7 +141,7 @@ export default function Landing() {
             <div>
               <div className="mk-kicker" style={{ color: 'var(--cyan)' }}>AI, with integrity</div>
               <h2>Less admin. Same accountability.</h2>
-              <p>Reffolio uses AI to draft the covering email that goes to each referee — in your organisation&rsquo;s voice, with your CQC registration and contact details. The reference itself is always completed and declared by a real person, then sealed so it can&rsquo;t be quietly changed.</p>
+              <p>Reffolio uses AI to draft the covering email that goes to each referee — in your organisation&rsquo;s voice, with your registration and contact details. The reference itself is always completed and declared by a real person, then sealed so it can&rsquo;t be quietly changed.</p>
             </div>
             <div className="mk-ai-list">
               <div className="mk-ai-item"><b>Sector-specific forms</b><span>Care, healthcare, education and social work — each with the right safeguarding questions.</span></div>
@@ -157,7 +157,7 @@ export default function Landing() {
           <div className="mk-section-head">
             <div className="mk-kicker">Pricing</div>
             <h2>Simple, per-seat plans</h2>
-            <p>Organisations pay per seat, with room to grow — from a single care home to a national agency.</p>
+            <p>Every plan starts with a 14-day free trial. Pay per seat, with room to grow — from a single team to a national agency.</p>
           </div>
           <div style={{ textAlign: 'center' }}>
             <Link href="/pricing" className="mk-btn mk-btn-primary mk-btn-lg">View plans &amp; pricing</Link>
