@@ -13,11 +13,11 @@ export default function Landing() {
         <div className="mk-container mk-hero-grid">
           <div>
             <span className="mk-eyebrow">● Verified references for regulated hiring</span>
-            <h1>References you can trust, across every regulated sector.</h1>
+            <h1>Verified references for regulated hiring.</h1>
             <p className="mk-lede">
-              Reffolio lets regulated employers request employment references, collect them on a
-              secure form built for your sector, and store them as verified, tamper-evident records —
-              with a full audit trail and the candidate&rsquo;s consent. Inspection-ready, every time.
+              Request, collect and store employment references as verified, tamper-evident,
+              consent-based records on forms aligned with CQC, NMC, HCPC, KCSIE —
+              and Social Work England. Inspection-ready, every time.
             </p>
             <div className="mk-hero-actions">
               <Link href="/signin" className="mk-btn mk-btn-primary mk-btn-lg">Start 14-day trial</Link>
