@@ -16,3 +16,4 @@ apikeys_panel.jsx
 new_*.jsx
 shell.jsx
 frontend/.next/
+*.bak*
