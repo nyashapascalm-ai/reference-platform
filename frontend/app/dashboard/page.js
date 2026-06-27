@@ -985,9 +985,9 @@ function BillingPanel({ me }) {
 
   // Columns reflect what the backend actually enforces (seats, api, white_label).
   const PLANS = [
-    { id: 'starter',  name: 'Starter',  price: '�29/mo',   blurb: 'A single team, small school or care home.' },
-    { id: 'team',     name: 'Team',     price: '�49/mo',   blurb: 'A larger provider running references regularly.' },
-    { id: 'growth',   name: 'Growth',   price: '£149/mo',  blurb: 'Busy departments and growing agencies.', popular: true },
+    { id: 'starter',  name: 'Starter',  price: '£29/mo',   blurb: 'A single team, small school or care home.' },
+    { id: 'team',     name: 'Team',     price: '£49/mo',   blurb: 'A larger provider running references regularly.' },
+    { id: 'growth',   name: 'Growth',   price: '£49/mo',  blurb: 'Busy departments and growing agencies.', popular: true },
     { id: 'business', name: 'Business', price: '£299/mo',  blurb: 'Large teams and multi-branch agencies.' },
   ];
   // Each row: label, help, and value per plan ('yes' | 'no' | custom string).

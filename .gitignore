@@ -15,3 +15,4 @@ endpoints_to_add.py
 apikeys_panel.jsx
 new_*.jsx
 shell.jsx
+frontend/.next/
