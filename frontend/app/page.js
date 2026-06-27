@@ -165,6 +165,19 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className="mk-section alt">
+        <div className="mk-container">
+          <div className="mk-section-head">
+            <div className="mk-kicker">For developers</div>
+            <h2>Connect Reffolio to your stack</h2>
+            <p>Request references from your own ATS, HR or recruitment system, get notified by webhook, and pull back verified records &mdash; while Reffolio handles the referee emails, consent and sector forms.</p>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <Link href="/api" className="mk-btn mk-btn-primary mk-btn-lg">Explore the API</Link>
+          </div>
+        </div>
+      </section>
+
       <section className="mk-section">
         <div className="mk-container">
           <div className="mk-cta">

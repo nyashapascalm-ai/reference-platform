@@ -15,6 +15,7 @@ export default function MarketingNav() {
           <Link href="/#how" onClick={() => setOpen(false)}>How it works</Link>
           <Link href="/#why" onClick={() => setOpen(false)}>Why Reffolio</Link>
           <Link href="/pricing" onClick={() => setOpen(false)}>Pricing</Link>
+          <Link href="/api" onClick={() => setOpen(false)}>API</Link>
           <Link href="/download" onClick={() => setOpen(false)}>Download</Link>
           <Link href="/contact" onClick={() => setOpen(false)}>Contact</Link>
         </div>
