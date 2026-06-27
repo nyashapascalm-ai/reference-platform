@@ -17,7 +17,7 @@ import stripe
 PLANS = {
     "free":       {"seats": 2,      "api": False, "white_label": False, "label": "Free"},
     "starter":    {"seats": 3,      "api": False, "white_label": False, "label": "Team Starter"},
-    "growth":     {"seats": 10,     "api": True,  "white_label": True,  "label": "Growth"},
+    "growth":     {"seats": 15,     "api": True,  "white_label": True,  "label": "Growth"},
     "business":   {"seats": 25,     "api": True,  "white_label": True,  "label": "Business"},
     "enterprise": {"seats": 100000, "api": True,  "white_label": True,  "label": "Enterprise"},
 }
