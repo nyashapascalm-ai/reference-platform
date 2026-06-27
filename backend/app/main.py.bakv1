@@ -1497,196 +1497,119 @@ async def v1_templates(vertical: str | None = None, actor=Depends(apikeys.requir
     return [dict(r) for r in rows]
 
 
-# ============================================================================
-# NEW /v1 API — request / consent / receive model (employer-to-employer)
-# Replaces the old worker-held endpoints (workers/verify, references create/publish).
-# Mirrors the UI's create_request behaviour exactly.
-# ============================================================================
-
-class V1RequestCreateIn(BaseModel):
-    worker_name: str
-    worker_email: str
-    referee_email: str
-    referee_name: str | None = None
-    prev_employer_name: str | None = None
-    template_id: str | None = None
-    message: str | None = None
-
-
-def _v1_request_status(req_status: str, consent_status: str | None) -> str:
-    """Map internal columns to a single public lifecycle status."""
-    if req_status == "sent":
-        return "pending"
-    if req_status == "opened":
-        return "opened"
-    if req_status == "completed":
-        if consent_status == "granted":
-            return "received"        # reference is readable by the requester
-        return "awaiting_consent"    # completed but candidate hasn't consented yet
-    return req_status or "pending"
-
-
-@app.post("/v1/requests", status_code=201)
-async def v1_request_create(body: V1RequestCreateIn, request: Request,
-                            actor=Depends(apikeys.require_api_org)):
-    """Create a reference request. Reffolio emails the referee a secure link and,
-    on completion, asks the candidate to consent — exactly as in the dashboard."""
-    org_id = actor["org_id"]
-    async with db.pool().acquire() as _bc:
-        await billing.assert_active(_bc, org_id)
-    referee_email = body.referee_email.strip().lower()
-    worker_email = body.worker_email.strip().lower()
-    if "@" not in referee_email:
-        raise HTTPException(422, "a valid referee email is required")
-    if "@" not in worker_email:
-        raise HTTPException(422, "a valid candidate email is required")
-    domain = referee_email.split("@")[-1]
-    free_mail = domain in {"gmail.com", "outlook.com", "hotmail.com", "yahoo.com",
-                           "icloud.com", "live.com", "aol.com", "me.com"}
-    raw, thash = new_share_token()
-    link = f"{SITE_URL}/complete-reference/{raw}"
-
+@app.post("/v1/workers/verify", status_code=201)
+async def v1_workers_verify(body: WorkerVerifyIn, actor=Depends(apikeys.require_api_org)):
+    # API cannot create the Supabase auth profile, so this verifies an
+    # org-scoped worker record by identity (no register lookup unless provided).
+    no_register = (body.registration_body or "").strip().lower() in ("none", "self", "")
+    if no_register:
+        reg_body, reg_number = "none", "api-" + secrets.token_hex(8)
+        check = {"status": "not_applicable"}
+    else:
+        reg_body = body.registration_body
+        if not body.registration_number:
+            raise HTTPException(422, "registration_number is required for this registration body")
+        reg_number = body.registration_number
+        check = await check_registration(reg_body, reg_number)
+    idhash = identity_hash(reg_body, reg_number, body.dbs_certificate_number)
     async with db.pool().acquire() as c:
-        org = await c.fetchrow("select name, brand_color, logo_url, email_signature from orgs where id = $1", org_id)
-        req = await c.fetchrow(
-            """
-            insert into reference_requests
-              (requester_org_id, requested_by, worker_name, worker_email, prev_employer_name,
-               referee_name, referee_email, referee_email_domain, domain_verified,
-               template_id, link_token_hash, message)
-            values ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            returning id
-            """,
-            org_id, actor.get("user_id"), body.worker_name.strip(), worker_email, body.prev_employer_name,
-            body.referee_name, referee_email, domain, (not free_mail),
-            body.template_id, thash, body.message,
-        )
-        await add_event(c, event_type="requested", request_id=req["id"],
-                       actor_org_id=org_id, actor_id=actor.get("user_id"),
-                       actor_email=actor.get("email"),
-                       detail={"referee_email": referee_email, "free_mail": free_mail, "via_api": True},
-                       ip_address=request.client.host if request.client else None)
-
-    sent = await email.send_email(
-        referee_email,
-        f"Reference request for {body.worker_name.strip()}",
-        request_email_html(candidate=body.worker_name.strip(),
-                          requester_org=org["name"], referee_name=body.referee_name,
-                          link=link, message=body.message,
-                          brand_color=org["brand_color"], logo_url=org["logo_url"],
-                          signature=org["email_signature"]),
-    )
-    return {"request_id": str(req["id"]), "status": "pending",
-            "email_sent": sent, "domain_verified": (not free_mail)}
-
-
-@app.get("/v1/requests/{request_id}")
-async def v1_request_get(request_id: UUID, actor=Depends(apikeys.require_api_org)):
-    """Poll one request: lifecycle status, and the produced reference + consent once available.
-    Scoped to the caller's organisation."""
-    org_id = actor["org_id"]
-    async with db.pool().acquire() as c:
-        req = await c.fetchrow(
-            """select id, worker_name, worker_email, referee_email, referee_name,
-                      prev_employer_name, status, created_at, sent_at, opened_at, completed_at,
-                      produced_reference_id, domain_verified
-               from reference_requests
-               where id = $1 and requester_org_id = $2""",
-            request_id, org_id,
-        )
-        if not req:
-            raise HTTPException(404, "request not found")
-        consent_status = None
-        ref_meta = None
-        if req["produced_reference_id"]:
-            srow = await c.fetchrow(
-                """select s.consent_status, r.ref_number, r.content_hash
-                   from reference_sends s join "references" r on r.id = s.reference_id
-                   where s.reference_id = $1 and s.recipient_org_id = $2
-                   order by s.created_at desc limit 1""",
-                req["produced_reference_id"], org_id,
+        try:
+            row = await c.fetchrow(
+                "insert into workers (profile_id, full_name, vertical, registration_body, registration_number, "
+                " registration_status, registration_checked_at, dbs_certificate_number, identity_hash) "
+                "values (null, $1, $2::vertical_t, $3::registration_body_t, $4, $5::verification_status_t, $6, $7, $8) "
+                "returning id, registration_status",
+                body.full_name, body.vertical, reg_body, reg_number, check["status"], _now(),
+                body.dbs_certificate_number, idhash,
             )
-            if srow:
-                consent_status = srow["consent_status"]
-                ref_meta = {"reference_id": str(req["produced_reference_id"]),
-                            "ref_number": srow["ref_number"],
-                            "content_hash": srow["content_hash"],
-                            "readable": srow["consent_status"] == "granted"}
-        return {
-            "request_id": str(req["id"]),
-            "status": _v1_request_status(req["status"], consent_status),
-            "candidate_name": req["worker_name"],
-            "candidate_email": req["worker_email"],
-            "referee_email": req["referee_email"],
-            "referee_name": req["referee_name"],
-            "previous_employer": req["prev_employer_name"],
-            "domain_verified": req["domain_verified"],
-            "created_at": req["created_at"].isoformat() if req["created_at"] else None,
-            "completed_at": req["completed_at"].isoformat() if req["completed_at"] else None,
-            "consent_status": consent_status,
-            "reference": ref_meta,
-        }
+        except Exception as e:
+            if "workers_registration_body_registration_number_key" in str(e):
+                raise HTTPException(409, "a worker with this registration already exists")
+            raise
+    return {"worker_id": str(row["id"]), "registration_status": row["registration_status"]}
 
 
-@app.get("/v1/requests")
-async def v1_request_list(actor=Depends(apikeys.require_api_org)):
-    """List the organisation's reference requests with their lifecycle status (polling fallback)."""
+@app.post("/v1/references", status_code=201)
+async def v1_reference_create(body: ReferenceCreateIn, actor=Depends(apikeys.require_api_org)):
     org_id = actor["org_id"]
     async with db.pool().acquire() as c:
-        rows = await c.fetch(
-            """select req.id, req.worker_name, req.referee_email, req.status, req.created_at,
-                      req.produced_reference_id, s.consent_status
-               from reference_requests req
-               left join reference_sends s on s.reference_id = req.produced_reference_id
-                    and s.recipient_org_id = req.requester_org_id
-               where req.requester_org_id = $1
-               order by req.created_at desc""",
-            org_id,
-        )
-    return [{"request_id": str(r["id"]),
-             "status": _v1_request_status(r["status"], r["consent_status"]),
-             "candidate_name": r["worker_name"],
-             "referee_email": r["referee_email"],
-             "consent_status": r["consent_status"],
-             "created_at": r["created_at"].isoformat() if r["created_at"] else None}
-            for r in rows]
+        org = await c.fetchrow("select email_domain from orgs where id = $1", org_id)
+        async with c.transaction():
+            ref = await c.fetchrow(
+                'insert into "references" (worker_id, issuing_org_id, template_id, assignment_context, content, created_by) '
+                "values ($1, $2, $3, $4, $5, null) returning id, status",
+                body.worker_id, org_id, body.template_id, body.assignment_context, body.content,
+            )
+            if body.referee is not None:
+                domain = body.referee.work_email.split("@")[-1].lower()
+                verified = bool(org["email_domain"]) and domain == str(org["email_domain"]).lower()
+                await c.execute(
+                    "insert into referees (reference_id, full_name, job_title, work_email, email_domain, domain_verified, auth_method) "
+                    "values ($1, $2, $3, $4, $5, $6, 'email_link')",
+                    ref["id"], body.referee.full_name, body.referee.job_title, body.referee.work_email, domain, verified)
+    return {"reference_id": str(ref["id"]), "status": ref["status"]}
+
+
+@app.post("/v1/references/{reference_id}/publish")
+async def v1_reference_publish(reference_id: UUID, actor=Depends(apikeys.require_api_org)):
+    org_id = actor["org_id"]
+    async with db.pool().acquire() as c:
+        ref = await c.fetchrow('select worker_id, issuing_org_id, template_id, content, status from "references" where id = $1', reference_id)
+        if ref is None:
+            raise HTTPException(404, "reference not found")
+        if ref["issuing_org_id"] != org_id:
+            raise HTTPException(403, "this reference belongs to a different organisation")
+        if ref["status"] == "published":
+            raise HTTPException(409, "reference already published")
+        tmpl = await c.fetchrow("select field_schema, vertical from reference_templates where id = $1", ref["template_id"])
+        required = (tmpl["field_schema"] or {}).get("required", []) if tmpl else []
+        content = ref["content"] or {}
+        missing = [f for f in required if not content.get(f)]
+        if missing:
+            raise HTTPException(422, {"error": "content missing required fields", "missing": missing})
+        chash = content_hash(str(ref["worker_id"]), str(org_id), content)
+        await c.execute("update \"references\" set status='published', content_hash=$2, published_at=$3 where id=$1",
+                        reference_id, chash, _now())
+        try:
+            result = await ai.synthesise(content, None, tmpl["vertical"] if tmpl else None)
+            await c.execute('update "references" set competency_map=$2, risk_score=$3, ai_summary=$4 where id=$1',
+                            reference_id, result["competency_map"], result["risk_score"], result["summary"])
+        except Exception:
+            pass
+    return {"reference_id": str(reference_id), "status": "published", "content_hash": chash}
 
 
 @app.get("/v1/references/{reference_id}")
 async def v1_reference_get(reference_id: UUID, actor=Depends(apikeys.require_api_org)):
-    """Fetch a received reference's content. Scoped: only references SENT TO the caller's
-    organisation with consent GRANTED are readable (never gated by billing status)."""
-    org_id = actor["org_id"]
     async with db.pool().acquire() as c:
-        srow = await c.fetchrow(
-            """select s.consent_status, s.recipient_name, s.created_at as received_at,
-                      r.id, r.content, r.content_hash, r.risk_score, r.ai_summary,
-                      r.ref_number, r.published_at, t.vertical, t.name as template_name
-               from reference_sends s
-               join "references" r on r.id = s.reference_id
-               left join reference_templates t on t.id = r.template_id
-               where s.reference_id = $1 and s.recipient_org_id = $2
-               order by s.created_at desc limit 1""",
-            reference_id, org_id,
-        )
-        if srow is None:
-            raise HTTPException(404, "reference not found for your organisation")
-        if srow["consent_status"] != "granted":
-            raise HTTPException(403, "the candidate has not consented to release this reference yet")
-    return {
-        "reference_id": str(srow["id"]),
-        "ref_number": srow["ref_number"],
-        "candidate_name": srow["recipient_name"],
-        "sector": srow["vertical"],
-        "template_name": srow["template_name"],
-        "content": srow["content"],
-        "content_hash": srow["content_hash"],
-        "risk_score": srow["risk_score"],
-        "ai_summary": srow["ai_summary"],
-        "consent_status": srow["consent_status"],
-        "published_at": srow["published_at"].isoformat() if srow["published_at"] else None,
-        "received_at": srow["received_at"].isoformat() if srow["received_at"] else None,
-    }
+        r = await c.fetchrow(
+            'select r.id, r.status, r.assignment_context, r.content, r.content_hash, r.risk_score, '
+            'r.ai_summary, r.published_at, r.created_at, w.full_name as worker_name '
+            'from "references" r join workers w on w.id = r.worker_id '
+            'where r.id = $1 and r.issuing_org_id = $2', reference_id, actor["org_id"])
+    if r is None:
+        raise HTTPException(404, "reference not found")
+    d = dict(r); d["id"] = str(d["id"])
+    for k in ("published_at", "created_at"):
+        if d.get(k) is not None:
+            d[k] = d[k].isoformat()
+    return d
+
+
+@app.get("/v1/references")
+async def v1_reference_list(actor=Depends(apikeys.require_api_org)):
+    async with db.pool().acquire() as c:
+        rows = await c.fetch(
+            'select r.id, r.status, r.assignment_context, r.content_hash, r.published_at, '
+            'w.full_name as worker_name from "references" r join workers w on w.id = r.worker_id '
+            'where r.issuing_org_id = $1 order by r.created_at desc', actor["org_id"])
+    out = []
+    for r in rows:
+        d = dict(r); d["id"] = str(d["id"])
+        if d.get("published_at") is not None:
+            d["published_at"] = d["published_at"].isoformat()
+        out.append(d)
+    return out
 # ============================================================
 # References Received — request flow endpoints (Layer 2)
 # Appended to main.py. Uses: require_org_actor, current_user, db,
