@@ -2109,6 +2109,8 @@ async def consent_decide(token: str, body: ConsentDecisionIn, request: Request):
                                      "ref_number": row["ref_number"]})
             except Exception:
                 pass
+            # Meter: charge one credit for this verified reference (idempotent, opt-in).
+            await billing.consume_reference_credit(c, row["recipient_org_id"], row["reference_id"])
         await add_event(c, event_type=("consent_granted" if new_status == "granted" else "consent_declined"),
                        reference_id=row["reference_id"],
                        actor_name=row["worker_name"], detail={"ref_number": row["ref_number"]},
