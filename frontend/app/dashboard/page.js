@@ -1151,7 +1151,7 @@ function ApiKeysPanel({ me }) {
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Your new key {'\u2014'} copy it now</div>
           <p className="kv" style={{ marginTop: 0 }}>This is the only time the full key is shown. Store it somewhere safe; if you lose it, revoke it and make a new one.</p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, background: 'var(--ink, #0c1020)', color: '#fff', padding: '8px 12px', borderRadius: 8, wordBreak: 'break-all' }}>{created.key}</code>
+            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, background: '#0c1020', color: '#ffffff', padding: '10px 14px', borderRadius: 8, wordBreak: 'break-all', fontWeight: 600, letterSpacing: '0.3px', flex: '1 1 auto', minWidth: 0 }}>{created.key}</code>
             <button className="ghost" style={{ marginTop: 0 }} onClick={copyKey}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
         </div>
