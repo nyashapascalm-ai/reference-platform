@@ -16,20 +16,22 @@ import stripe
 # Plan definitions — seats is the billing unit (per manager seat).
 PLANS = {
     "free":       {"seats": 2,      "api": False, "white_label": False, "label": "Free"},
-    "starter":    {"seats": 3,      "api": False, "white_label": False, "label": "Team Starter"},
+    "starter":    {"seats": 2,      "api": False, "white_label": False, "label": "Starter"},
+    "team":       {"seats": 8,      "api": False, "white_label": False, "label": "Team"},
     "growth":     {"seats": 15,     "api": True,  "white_label": True,  "label": "Growth"},
     "business":   {"seats": 25,     "api": True,  "white_label": True,  "label": "Business"},
     "enterprise": {"seats": 100000, "api": True,  "white_label": True,  "label": "Enterprise"},
 }
 _PRICE_ENV = {
     "starter": "STRIPE_PRICE_STARTER",
+    "team": "STRIPE_PRICE_TEAM",
     "growth": "STRIPE_PRICE_GROWTH",
     "business": "STRIPE_PRICE_BUSINESS",
     "enterprise": "STRIPE_PRICE_ENTERPRISE",
 }
 
 # Indicative monthly GBP per plan, for super-admin MRR estimates only.
-PLAN_PRICE_GBP = {"starter": 49, "growth": 149, "business": 299}
+PLAN_PRICE_GBP = {"starter": 29, "team": 49, "growth": 149, "business": 299}
 
 
 def configured() -> bool:
@@ -110,6 +112,7 @@ def checkout_subscription(customer_id, price_id, success_url, cancel_url, org_id
     _init()
     s = stripe.checkout.Session.create(
         mode="subscription", customer=customer_id,
+        subscription_data={"trial_period_days": 14},
         line_items=[{"price": price_id, "quantity": 1}],
         success_url=success_url, cancel_url=cancel_url,
         metadata={"org_id": str(org_id)},

@@ -1,18 +1,18 @@
-'use client';
+﻿'use client';
 import Link from 'next/link';
 import '../marketing.css';
 import MarketingNav from '../../components/MarketingNav';
 import MarketingFooter from '../../components/MarketingFooter';
 
 const PLANS = [
-  { name: 'Free', price: '£0', unit: '', sub: 'For trying Reffolio or a single team getting started.', seats: '2 seats',
-    features: ['2 seats', 'Issue & verify references', 'Tamper-evident records', 'Consent-based worker sharing', 'AI fairness & sector analysis'], cta: 'Start free' },
-  { name: 'Starter', price: '£49', unit: '/mo', sub: 'For a small team running references regularly.', seats: '3 seats',
-    features: ['3 seats', 'Everything in Free', 'Team management & invites', 'Admin oversight & records', 'Email support'], cta: 'Choose Starter' },
-  { name: 'Growth', price: '£149', unit: '/mo', sub: 'For busy departments and growing agencies.', featured: true, seats: '10 seats',
-    features: ['10 seats', 'Everything in Starter', 'API access', 'White-label references', 'Pay-as-you-go credits', 'Priority support'], cta: 'Choose Growth' },
+  { name: 'Starter', price: '£29', unit: '/mo', sub: 'A single team, small school or care home.', seats: '2 seats',
+    features: ['2 seats', '14-day free trial', 'Request & receive references', 'Tamper-evident records', 'Consent-based release', 'Sector-specific forms'], cta: 'Start 14-day trial' },
+  { name: 'Team', price: '£49', unit: '/mo', sub: 'A larger provider running references regularly.', seats: '8 seats',
+    features: ['8 seats', '14-day free trial', 'Everything in Starter', 'Team management & invites', 'Admin oversight & records', 'Email support'], cta: 'Start 14-day trial' },
+  { name: 'Growth', price: '£149', unit: '/mo', sub: 'For busy departments and growing agencies.', featured: true, seats: '15 seats',
+    features: ['15 seats', '14-day free trial', 'Everything in Team', 'API access', 'White-label references', 'Pay-as-you-go credits', 'Priority support'], cta: 'Start 14-day trial' },
   { name: 'Business', price: '£299', unit: '/mo', sub: 'For large teams and multi-branch agencies.', seats: '25 seats',
-    features: ['25 seats', 'Everything in Growth', 'Onboarding support', 'Priority support'], cta: 'Choose Business' },
+    features: ['25 seats', '14-day free trial', 'Everything in Growth', 'Onboarding support', 'Priority support'], cta: 'Start 14-day trial' },
 ];
 
 export default function Pricing() {
@@ -23,7 +23,7 @@ export default function Pricing() {
         <div className="mk-container">
           <div className="mk-kicker" style={{ color: 'var(--violet)', fontWeight: 700, letterSpacing: '.08em' }}>PRICING</div>
           <h1 style={{ marginTop: 12 }}>Plans that scale with your team</h1>
-          <p>Workers use Reffolio free, forever. Organisations pay per seat — every member or pending invite uses one seat. Cancel or change anytime.</p>
+          <p>Every plan starts with a 14-day free trial. Organisations pay per seat. Cancel or change anytime.</p>
         </div>
       </section>
 
@@ -45,7 +45,7 @@ export default function Pricing() {
           <div className="mk-enterprise">
             <div>
               <h3 style={{ fontSize: 20 }}>Enterprise</h3>
-              <p style={{ marginTop: 6 }}>Unlimited seats, white-labelling, SSO, G-Cloud procurement and a dedicated contact — for councils and national agencies.</p>
+              <p style={{ marginTop: 6 }}>Unlimited seats, white-labelling, SSO, G-Cloud procurement and a dedicated contact â€” for councils and national agencies.</p>
             </div>
             <a href="mailto:support@reffolio.co.uk?subject=Enterprise%20enquiry" className="mk-btn mk-btn-primary">Talk to us</a>
           </div>
@@ -55,9 +55,9 @@ export default function Pricing() {
             <h2 style={{ fontSize: 30 }}>The things that make a reference trustworthy</h2>
           </div>
           <div className="mk-grid">
-            <div className="mk-feature"><h3>Verified identity</h3><p>Registration checks against the relevant professional register before issue.</p></div>
+            <div className="mk-feature"><h3>Verified referee</h3><p>The previous employer completes the reference from their work email; free-mail addresses are flagged.</p></div>
             <div className="mk-feature"><h3>Tamper-evident seal</h3><p>Cryptographic hashing on every published reference, with referee confirmation.</p></div>
-            <div className="mk-feature"><h3>Consent-based sharing</h3><p>Workers hold and share their own references — no chasing, no back-channels.</p></div>
+            <div className="mk-feature"><h3>Consent-based release</h3><p>The candidate consents before a reference is released to the requester.</p></div>
           </div>
         </div>
       </section>
@@ -65,8 +65,8 @@ export default function Pricing() {
       <section className="mk-section" style={{ paddingTop: 0 }}>
         <div className="mk-container">
           <div className="mk-cta">
-            <h2>Start free, upgrade when you{'\u2019'}re ready</h2>
-            <p>Set up your organisation in minutes — no card required to begin.</p>
+            <h2>Start your 14-day trial</h2>
+            <p>Set up your organisation in minutes. Try every feature free for 14 days.</p>
             <Link href="/signin" className="mk-btn mk-btn-primary mk-btn-lg">Get started</Link>
           </div>
         </div>

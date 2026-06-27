@@ -985,24 +985,24 @@ function BillingPanel({ me }) {
 
   // Columns reflect what the backend actually enforces (seats, api, white_label).
   const PLANS = [
-    { id: 'free',     name: 'Free',     price: '£0',       blurb: 'Trying Reffolio or a single team.' },
-    { id: 'starter',  name: 'Starter',  price: '£49/mo',   blurb: 'A small team running references regularly.' },
+    { id: 'starter',  name: 'Starter',  price: '�29/mo',   blurb: 'A single team, small school or care home.' },
+    { id: 'team',     name: 'Team',     price: '�49/mo',   blurb: 'A larger provider running references regularly.' },
     { id: 'growth',   name: 'Growth',   price: '£149/mo',  blurb: 'Busy departments and growing agencies.', popular: true },
     { id: 'business', name: 'Business', price: '£299/mo',  blurb: 'Large teams and multi-branch agencies.' },
   ];
   // Each row: label, help, and value per plan ('yes' | 'no' | custom string).
   const ROWS = [
-    { label: 'Manager seats', vals: { free: '2', starter: '3', growth: '10', business: '25' } },
-    { label: 'Issue & verify references', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'Tamper-evident records', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'Consent-based worker sharing', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'AI fairness + sector analysis', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'Team management & invites', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'Admin oversight & records', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'Pay-as-you-go credits', vals: { free: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
-    { label: 'API access', vals: { free: 'no', starter: 'no', growth: 'yes', business: 'yes' } },
-    { label: 'White-label', vals: { free: 'no', starter: 'no', growth: 'yes', business: 'yes' } },
-    { label: 'Support', vals: { free: 'Community', starter: 'Email', growth: 'Priority', business: 'Priority' } },
+    { label: 'Manager seats', vals: { starter: '2', team: '8', growth: '15', business: '25' } },
+    { label: 'Issue & verify references', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Tamper-evident records', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Consent-based worker sharing', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'AI fairness + sector analysis', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Team management & invites', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Admin oversight & records', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'Pay-as-you-go credits', vals: { team: 'yes', starter: 'yes', growth: 'yes', business: 'yes' } },
+    { label: 'API access', vals: { team: 'no', starter: 'no', growth: 'yes', business: 'yes' } },
+    { label: 'White-label', vals: { team: 'no', starter: 'no', growth: 'yes', business: 'yes' } },
+    { label: 'Support', vals: { team: 'Email', starter: 'Email', growth: 'Priority', business: 'Priority' } },
   ];
 
   const cell = (v) => {
