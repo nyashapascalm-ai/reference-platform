@@ -61,6 +61,32 @@ export default function AdminConsole() {
     } catch (e) { setErr(true); setMsg(e.message); }
   }
 
+  async function onboardPartner(partnerId, partnerName) {
+    setErr(false); setMsg('');
+    const email = window.prompt(`Email to invite for ${partnerName}'s dashboard:`);
+    if (!email) return;
+    try {
+      const r = await api(`/admin/partners/${partnerId}/onboard`, { method: 'POST', body: { email: email.trim() } });
+      setMsg(r.sent ? `Invite sent to ${email}. They set their own password and land on their dashboard.` : `Invite created. Link: ${r.invite_link}`);
+      await reload(includeArchived);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
+  async function togglePartner(partnerId, active) {
+    setErr(false); setMsg('');
+    try {
+      await api(`/admin/partners/${partnerId}/${active ? 'pause' : 'activate'}`, { method: 'POST' });
+      setMsg(active ? 'Partner paused.' : 'Partner activated.'); await reload(includeArchived);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
+  async function removePartner(partnerId, partnerName) {
+    setErr(false); setMsg('');
+    if (!window.confirm(`Remove partner "${partnerName}"? Past references keep their data but lose the partner tag.`)) return;
+    try {
+      await api(`/admin/partners/${partnerId}`, { method: 'DELETE' });
+      setMsg('Partner removed.'); await reload(includeArchived);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
+
   const load = useCallback(async () => {
     let { data } = await supabase.auth.getSession();
     if (!data.session) { await new Promise((r) => setTimeout(r, 600)); ({ data } = await supabase.auth.getSession()); }
@@ -239,7 +265,10 @@ export default function AdminConsole() {
                     <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>£{p.all_time.reffolio_net.toFixed(2)}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => issuePartnerKey(p.id)}>Issue key</button>{' '}
-                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => attachPartnerOrg(p.id)}>Attach org</button>
+                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => attachPartnerOrg(p.id)}>Attach org</button>{' '}
+                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => onboardPartner(p.id, p.name)}>Onboard</button>{' '}
+                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => togglePartner(p.id, p.active)}>{p.active ? 'Pause' : 'Activate'}</button>{' '}
+                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12, color: '#b42318' }} onClick={() => removePartner(p.id, p.name)}>Remove</button>
                     </td>
                   </tr>
                 ))}
@@ -277,6 +306,11 @@ export default function AdminConsole() {
                   <span className="badge">{o.plan}</span> <span className="badge">{o.status}</span>
                   {o.is_suspended && <span className="badge" style={{ marginLeft: 4, background: '#fef0c7', color: '#92600a' }}>suspended</span>}
                   {o.archived_at && <span className="badge" style={{ marginLeft: 4, background: '#fde8e8', color: '#b42318' }}>archived</span>}
+                </div>
+                <div className="kv" style={{ fontFamily: 'monospace', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span>{o.id}</span>
+                  <button className="ghost" style={{ marginTop: 0, padding: '1px 6px', fontSize: 10 }}
+                    onClick={() => { navigator.clipboard?.writeText(o.id); setMsg('Org ID copied.'); }}>copy</button>
                 </div>
                 <div className="kv">
                   {(o.org_type || '').replace('_', ' ')} · {o.members} of {o.seats} seats · {o.refs} reference{o.refs === 1 ? '' : 's'} · joined {new Date(o.created_at).toLocaleDateString()}
