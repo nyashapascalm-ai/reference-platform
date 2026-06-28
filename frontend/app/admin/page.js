@@ -11,17 +11,55 @@ export default function AdminConsole() {
   const [overview, setOverview] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [orgs, setOrgs] = useState([]);
+  const [partnersOverview, setPartnersOverview] = useState(null);
+  const [npName, setNpName] = useState(''); const [npEmail, setNpEmail] = useState('');
+  const [npPrice, setNpPrice] = useState(''); const [npShare, setNpShare] = useState('');
+  const [issuedKey, setIssuedKey] = useState(null);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
   const [delTarget, setDelTarget] = useState(null); const [delText, setDelText] = useState('');
 
   const reload = useCallback(async (incArch) => {
-    const [ov, an, og] = await Promise.all([
+    const [ov, an, og, po] = await Promise.all([
       api('/admin/overview'), api('/admin/analytics'),
       api(`/admin/orgs${incArch ? '?include_archived=true' : ''}`),
+      api('/admin/partners-overview').catch(() => null),
     ]);
-    setOverview(ov); setAnalytics(an); setOrgs(og.orgs || []);
+    setOverview(ov); setAnalytics(an); setOrgs(og.orgs || []); setPartnersOverview(po);
   }, []);
+
+  async function createPartner() {
+    setErr(false); setMsg('');
+    if (!npName.trim()) { setErr(true); setMsg('Partner name is required.'); return; }
+    try {
+      await api('/admin/partners', { method: 'POST', body: {
+        name: npName.trim(), contact_email: npEmail.trim() || null,
+        price_per_ref: npPrice ? parseFloat(npPrice) : null,
+        rev_share_pct: npShare ? parseFloat(npShare) : null,
+      }});
+      setNpName(''); setNpEmail(''); setNpPrice(''); setNpShare('');
+      setMsg('Partner created.'); await reload(includeArchived);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
+  async function issuePartnerKey(partnerId) {
+    setErr(false); setMsg(''); setIssuedKey(null);
+    const orgId = window.prompt('Org ID this key operates through (the partner home org or a customer org):');
+    if (!orgId) return;
+    try {
+      const r = await api(`/admin/partners/${partnerId}/issue-key`, { method: 'POST', body: { org_id: orgId.trim() } });
+      setIssuedKey({ partner: partnerId, key: r.key });
+      setMsg('Key issued - copy it now, it is shown once.');
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
+  async function attachPartnerOrg(partnerId) {
+    setErr(false); setMsg('');
+    const orgId = window.prompt('Org ID to attach to this partner (references from it attribute to the partner):');
+    if (!orgId) return;
+    try {
+      await api(`/admin/partners/${partnerId}/attach-org`, { method: 'POST', body: { org_id: orgId.trim() } });
+      setMsg('Org attached to partner.'); await reload(includeArchived);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
 
   const load = useCallback(async () => {
     let { data } = await supabase.auth.getSession();
@@ -152,6 +190,73 @@ export default function AdminConsole() {
           <button onClick={() => downloadReport('csv')}>Download CSV</button>
           <button className="ghost" onClick={() => downloadReport('pdf')}>Download PDF</button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h2 style={{ marginTop: 0 }}>Partners {partnersOverview?.partners ? `(${partnersOverview.partners.length})` : ''}</h2>
+        <p className="kv">Per-reference revenue by partner. Gross = references &times; price. Their share = gross &times; rev-share %. Net = what Reffolio keeps.</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', margin: '12px 0 16px' }}>
+          <div><div className="kv">Name</div><input value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="e.g. uCheck" style={{ minWidth: 150 }} /></div>
+          <div><div className="kv">Contact email</div><input value={npEmail} onChange={(e) => setNpEmail(e.target.value)} placeholder="partner@example.com" /></div>
+          <div><div className="kv">£/ref</div><input value={npPrice} onChange={(e) => setNpPrice(e.target.value)} placeholder="5.00" style={{ width: 80 }} /></div>
+          <div><div className="kv">Share %</div><input value={npShare} onChange={(e) => setNpShare(e.target.value)} placeholder="30" style={{ width: 70 }} /></div>
+          <button onClick={createPartner}>Create partner</button>
+        </div>
+        {issuedKey && (
+          <div className="card" style={{ background: 'rgba(0,184,166,.06)', border: '1px solid var(--accent, #00B8A6)', margin: '0 0 14px' }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Partner key - copy it now</div>
+            <code style={{ background: '#0c1020', color: '#fff', padding: '8px 12px', borderRadius: 8, wordBreak: 'break-all', display: 'inline-block', fontSize: 13 }}>{issuedKey.key}</code>
+          </div>
+        )}
+        {!partnersOverview && <p className="kv">Loading partner data...</p>}
+        {partnersOverview && partnersOverview.partners.length === 0 && <p className="kv">No partners yet. Create one above.</p>}
+        {partnersOverview && partnersOverview.partners.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid var(--line, #e7e9f2)' }}>
+                <th style={{ padding: '8px 10px' }}>Partner</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>£/ref</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Share %</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (mo)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net (mo)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (all)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Gross (all)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Their share</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net (all)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Actions</th>
+              </tr></thead>
+              <tbody>
+                {partnersOverview.partners.map((p) => (
+                  <tr key={p.id} style={{ borderBottom: '1px solid var(--line, #eee)' }}>
+                    <td style={{ padding: '8px 10px' }}>{p.name}{!p.active && <span className="kv"> (inactive)</span>}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{p.price_per_ref.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.rev_share_pct.toFixed(0)}%</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.this_month.refs}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{p.this_month.reffolio_net.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.all_time.refs}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{p.all_time.gross.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{p.all_time.partner_share.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>£{p.all_time.reffolio_net.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => issuePartnerKey(p.id)}>Issue key</button>{' '}
+                      <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => attachPartnerOrg(p.id)}>Attach org</button>
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: '2px solid var(--line, #e7e9f2)', fontWeight: 700 }}>
+                  <td style={{ padding: '8px 10px' }}>Totals</td><td></td><td></td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.this_month.refs}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{partnersOverview.totals.this_month.reffolio_net.toFixed(2)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.all_time.refs}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{partnersOverview.totals.all_time.gross.toFixed(2)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{partnersOverview.totals.all_time.partner_share.toFixed(2)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>£{partnersOverview.totals.all_time.reffolio_net.toFixed(2)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card">
