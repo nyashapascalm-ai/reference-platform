@@ -286,12 +286,16 @@ async def consume_reference_credit(conn, org_id, ref_id) -> None:
     if not metering_enabled():
         return
     try:
+        # Resolve the partner that owns this org (if any) for attribution.
+        partner_id = await conn.fetchval(
+            "select partner_id from orgs where id = $1", org_id
+        )
         await conn.execute(
-            "insert into billing_credits (org_id, delta, reason, ref_id) "
-            "values ($1, -1, 'reference', $2) "
+            "insert into billing_credits (org_id, delta, reason, ref_id, partner_id) "
+            "values ($1, -1, 'reference', $2, $3) "
             "on conflict (org_id, ref_id) where reason = 'reference' and ref_id is not null "
             "do nothing",
-            org_id, ref_id,
+            org_id, ref_id, partner_id,
         )
     except Exception:
         # Metering must never break reference delivery.
