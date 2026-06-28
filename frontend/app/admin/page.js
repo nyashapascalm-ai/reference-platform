@@ -36,9 +36,8 @@ export default function AdminConsole() {
       await api('/admin/partners', { method: 'POST', body: {
         name: npName.trim(), contact_email: npEmail.trim() || null,
         price_per_ref: npPrice ? parseFloat(npPrice) : null,
-        rev_share_pct: npShare ? parseFloat(npShare) : null,
       }});
-      setNpName(''); setNpEmail(''); setNpPrice(''); setNpShare('');
+      setNpName(''); setNpEmail(''); setNpPrice('');
       setMsg('Partner created.'); await reload(includeArchived);
     } catch (e) { setErr(true); setMsg(e.message); }
   }
@@ -265,7 +264,6 @@ export default function AdminConsole() {
           <div><div className="kv">Name</div><input value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="e.g. uCheck" style={{ minWidth: 150 }} /></div>
           <div><div className="kv">Contact email</div><input value={npEmail} onChange={(e) => setNpEmail(e.target.value)} placeholder="partner@example.com" /></div>
           <div><div className="kv">Price / ref</div><input value={npPrice} onChange={(e) => setNpPrice(e.target.value)} placeholder="5.00" style={{ width: 80 }} /></div>
-          <div><div className="kv">Their share %</div><input value={npShare} onChange={(e) => setNpShare(e.target.value)} placeholder="30" style={{ width: 70 }} /></div>
           <button onClick={createPartner}>Create partner</button>
         </div>
 
@@ -286,9 +284,9 @@ export default function AdminConsole() {
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Price</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Share</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (mo)</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net (mo)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount (mo)</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (all)</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net (all)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount (all)</th>
                 <th style={{ padding: '8px 10px' }}>Actions</th>
               </tr></thead>
               <tbody>
@@ -298,9 +296,9 @@ export default function AdminConsole() {
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.price_per_ref.toFixed(2)}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.rev_share_pct.toFixed(0)}%</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.this_month.refs}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.this_month.reffolio_net.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.this_month.amount.toFixed(2)}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.all_time.refs}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>&pound;{p.all_time.reffolio_net.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>&pound;{p.all_time.amount.toFixed(2)}</td>
                     <td style={{ padding: '8px 10px' }}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         <button style={{ marginTop: 0, padding: '5px 12px', fontSize: 12 }} onClick={() => setupPartner(p.id, p.name)}>Set up partner</button>
@@ -311,11 +309,11 @@ export default function AdminConsole() {
                   </tr>
                 ))}
                 <tr style={{ borderTop: '2px solid var(--line, #e7e9f2)', fontWeight: 700 }}>
-                  <td style={{ padding: '8px 10px' }}>Totals</td><td></td><td></td>
+                  <td style={{ padding: '8px 10px' }}>Totals</td><td></td>
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.this_month.refs}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.this_month.reffolio_net.toFixed(2)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.this_month.amount.toFixed(2)}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.all_time.refs}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.all_time.reffolio_net.toFixed(2)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.all_time.amount.toFixed(2)}</td>
                   <td></td>
                 </tr>
               </tbody>

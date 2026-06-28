@@ -63,19 +63,17 @@ export default function PartnerDashboard() {
       <h2 style={{ marginTop: 24, fontSize: 18 }}>This month</h2>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <Stat label="References" value={data.this_month.refs} />
-        <Stat label="Gross value" value={`£${data.this_month.gross.toFixed(2)}`} />
-        <Stat label="Your earnings" value={`£${data.this_month.your_share.toFixed(2)}`} />
+        <Stat label="Amount due" value={`£${data.this_month.amount.toFixed(2)}`} />
       </div>
 
       <h2 style={{ marginTop: 28, fontSize: 18 }}>All time</h2>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <Stat label="References" value={data.all_time.refs} />
-        <Stat label="Gross value" value={`£${data.all_time.gross.toFixed(2)}`} />
-        <Stat label="Your earnings" value={`£${data.all_time.your_share.toFixed(2)}`} />
+        <Stat label="Amount invoiced" value={`£${data.all_time.amount.toFixed(2)}`} />
       </div>
 
       <p className="kv" style={{ marginTop: 28 }}>
-        Gross is the total value of references generated through your integration. Your earnings are your agreed {p.rev_share_pct.toFixed(0)}% share. Figures update as references reach verified consent.
+        Amount due is your references multiplied by your agreed fee. You're invoiced monthly. Figures update as references reach verified consent.
       </p>
     </div>
   );
