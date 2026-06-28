@@ -1535,6 +1535,7 @@ async def v1_request_create(body: V1RequestCreateIn, request: Request,
     org_id = actor["org_id"]
     async with db.pool().acquire() as _bc:
         await billing.assert_active(_bc, org_id)
+        await billing.assert_credits(_bc, org_id)
     referee_email = body.referee_email.strip().lower()
     worker_email = body.worker_email.strip().lower()
     if "@" not in referee_email:
@@ -1750,6 +1751,7 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
     org_id = actor["org_id"]
     async with db.pool().acquire() as _bc:
         await billing.assert_active(_bc, org_id)
+        await billing.assert_credits(_bc, org_id)
     referee_email = body.referee_email.strip().lower()
     worker_email = body.worker_email.strip().lower()
     if "@" not in referee_email:
