@@ -1560,7 +1560,7 @@ async def v1_request_create(body: V1RequestCreateIn, request: Request,
             """,
             org_id, actor.get("user_id"), body.worker_name.strip(), worker_email, body.prev_employer_name,
             body.referee_name, referee_email, domain, (not free_mail),
-            body.template_id, thash, body.message,
+            (body.template_id or await resolve_default_template(c, org_id)), thash, body.message,
         )
         await add_event(c, event_type="requested", request_id=req["id"],
                        actor_org_id=org_id, actor_id=actor.get("user_id"),
@@ -1721,6 +1721,29 @@ class RequestCompleteIn(BaseModel):
     worker_vertical: str | None = None
 
 
+async def resolve_default_template(conn, org_id):
+    """Return an appropriate template_id for an org that didn't specify one.
+    Picks the active template matching the org's vertical; falls back to any
+    active template. Returns None only if no templates exist at all."""
+    row = await conn.fetchrow(
+        """select t.id
+           from reference_templates t
+           join orgs o on o.vertical = t.vertical
+           where o.id = $1 and t.is_active
+           order by t.name
+           limit 1""",
+        org_id,
+    )
+    if row:
+        return row["id"]
+    # Fallback: any active template (keeps the flow working even if vertical
+    # doesn't match a template for some reason).
+    row = await conn.fetchrow(
+        "select id from reference_templates where is_active order by name limit 1"
+    )
+    return row["id"] if row else None
+
+
 @app.post("/requests")
 async def create_request(body: RequestCreateIn, request: Request, actor=Depends(require_org_actor)):
     """A hiring provider requests a reference about a candidate from a previous employer."""
@@ -1752,7 +1775,7 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
             """,
             org_id, actor["user_id"], body.worker_name.strip(), worker_email, body.prev_employer_name,
             body.referee_name, referee_email, domain, (not free_mail),
-            body.template_id, thash, body.message,
+            (body.template_id or await resolve_default_template(c, org_id)), thash, body.message,
         )
         await add_event(c, event_type="requested", request_id=req["id"],
                        actor_org_id=org_id, actor_id=actor["user_id"],
@@ -1881,7 +1904,9 @@ async def complete_request(token: str, body: RequestCompleteIn, request: Request
             values ($1, $2, $3, $4, $5, $6, 'published', $7, $7, $7, null)
             returning id
             """,
-            worker_id, org_id, req["template_id"], body.content, chash, ref_number, now,
+            worker_id, org_id,
+            (req["template_id"] or await resolve_default_template(c, org_id)),
+            body.content, chash, ref_number, now,
         )
         ref_id = ref["id"]
 
