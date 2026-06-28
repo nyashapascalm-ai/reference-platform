@@ -125,6 +125,9 @@ export default function Dashboard() {
         }
       }
       setMe(m);
+      // redirect partner users to their dashboard; staff to the admin console
+      if (m?.partner_id) { router.push('/partner'); return; }
+      if (m?.is_super_admin && !m?.org_id && !m?.worker_id) { router.push('/admin'); return; }
     }
     catch (e) { setError(e.message); }
     finally { setLoading(false); }

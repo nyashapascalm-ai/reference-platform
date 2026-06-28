@@ -541,7 +541,9 @@ async def me(actor=Depends(current_user)):
     """Who am I, per my token — and what identities are attached."""
     async with db.pool().acquire() as c:
         prof = await c.fetchrow(
-            "select org_id, role, full_name from profiles where id = $1::uuid", actor["user_id"]
+            "select p.org_id, p.role, p.full_name, o.partner_id "
+            "from profiles p left join orgs o on o.id = p.org_id "
+            "where p.id = $1::uuid", actor["user_id"]
         )
         worker = await c.fetchrow(
             "select id from workers where profile_id = $1::uuid", actor["user_id"]
@@ -555,6 +557,7 @@ async def me(actor=Depends(current_user)):
         "role": prof["role"] if prof else None,
         "worker_id": str(worker["id"]) if worker else None,
         "is_super_admin": is_super,
+        "partner_id": str(prof["partner_id"]) if prof and prof["partner_id"] else None,
     }
 
 
