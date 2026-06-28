@@ -79,6 +79,19 @@ export default function AdminConsole() {
     } catch (e) { setErr(true); setMsg(e.message); }
   }
 
+  async function setupPartner(partnerId, partnerName) {
+    setErr(false); setMsg('');
+    const email = window.prompt(`Partner's email for ${partnerName} (we create their account + send a login link + issue their API key):`);
+    if (!email) return;
+    try {
+      const r = await api(`/admin/partners/${partnerId}/setup`, { method: 'POST', body: { email: email.trim() } });
+      setIssuedKey({ partner: partnerId, key: r.api_key });
+      setMsg(r.invite_sent
+        ? `Set up complete. Login link emailed to ${email}. API key shown below - copy it now.`
+        : `Set up complete. Email could not send; invite link: ${r.invite_link}. API key shown below.`);
+      await reload(includeArchived);
+    } catch (e) { setErr(true); setMsg(e.message); }
+  }
   async function onboardPartner(partnerId, partnerName) {
     setErr(false); setMsg('');
     const email = window.prompt(`Email to invite for ${partnerName}'s dashboard:`);
@@ -243,8 +256,7 @@ export default function AdminConsole() {
           <div style={{ fontWeight: 700, marginBottom: 6 }}>How to onboard a partner</div>
           <div className="kv" style={{ lineHeight: 1.7 }}>
             <b>1. Create</b> the partner below (name, price per reference, their revenue share). &nbsp;
-            <b>2. Invite</b> them &mdash; sends a login link to their email so they can see their own dashboard. &nbsp;
-            <b>3. Connect</b> (optional, when their developers integrate) &mdash; issue an API key and/or attach the customer orgs whose references should count for them.
+            <b>2. Set up</b> &mdash; enter their email and we create their account, email them a login link, and issue their API key in one step. They click the link, set a password, and land on their dashboard. That&rsquo;s it.
           </div>
         </div>
 
@@ -277,7 +289,7 @@ export default function AdminConsole() {
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net (mo)</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (all)</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net (all)</th>
-                <th style={{ padding: '8px 10px' }}>Onboarding</th>
+                <th style={{ padding: '8px 10px' }}>Actions</th>
               </tr></thead>
               <tbody>
                 {partnersOverview.partners.map((p) => (
@@ -291,16 +303,9 @@ export default function AdminConsole() {
                     <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>&pound;{p.all_time.reffolio_net.toFixed(2)}</td>
                     <td style={{ padding: '8px 10px' }}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => onboardPartner(p.id, p.name)}>2 &middot; Send login invite</button>
-                        <select value={pickOrg[p.id] || ''} onChange={(e) => setPickOrg({ ...pickOrg, [p.id]: e.target.value })} style={{ width: 'auto', padding: '4px 6px', fontSize: 12 }}>
-                          <option value="">— pick an org —</option>
-                          {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                        </select>
-                        <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => issuePartnerKeyFor(p.id, pickOrg[p.id])}>3 &middot; Issue API key</button>
-                        <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => attachPartnerOrgFor(p.id, pickOrg[p.id])}>3 &middot; Attach org</button>
-                        <span style={{ width: 1, height: 18, background: 'var(--line, #ddd)', display: 'inline-block', margin: '0 2px' }} />
-                        <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12 }} onClick={() => togglePartner(p.id, p.active)}>{p.active ? 'Pause' : 'Activate'}</button>
-                        <button className="ghost" style={{ marginTop: 0, padding: '4px 8px', fontSize: 12, color: '#b42318' }} onClick={() => removePartner(p.id, p.name)}>Remove</button>
+                        <button style={{ marginTop: 0, padding: '5px 12px', fontSize: 12 }} onClick={() => setupPartner(p.id, p.name)}>Set up partner</button>
+                        <button className="ghost" style={{ marginTop: 0, padding: '5px 10px', fontSize: 12 }} onClick={() => togglePartner(p.id, p.active)}>{p.active ? 'Pause' : 'Activate'}</button>
+                        <button className="ghost" style={{ marginTop: 0, padding: '5px 10px', fontSize: 12, color: '#b42318' }} onClick={() => removePartner(p.id, p.name)}>Remove</button>
                       </div>
                     </td>
                   </tr>
