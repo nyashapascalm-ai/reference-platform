@@ -1511,6 +1511,7 @@ class V1RequestCreateIn(BaseModel):
     referee_name: str | None = None
     prev_employer_name: str | None = None
     template_id: str | None = None
+    vertical: str | None = None
     message: str | None = None
 
 
@@ -1561,7 +1562,9 @@ async def v1_request_create(body: V1RequestCreateIn, request: Request,
             """,
             org_id, actor.get("user_id"), body.worker_name.strip(), worker_email, body.prev_employer_name,
             body.referee_name, referee_email, domain, (not free_mail),
-            (body.template_id or await resolve_default_template(c, org_id)), thash, body.message,
+            (body.template_id
+             or await resolve_template_for_vertical(c, body.vertical)
+             or await resolve_default_template(c, org_id)), thash, body.message,
         )
         await add_event(c, event_type="requested", request_id=req["id"],
                        actor_org_id=org_id, actor_id=actor.get("user_id"),
@@ -1710,6 +1713,7 @@ class RequestCreateIn(BaseModel):
     referee_name: str | None = None
     prev_employer_name: str | None = None
     template_id: str | None = None
+    vertical: str | None = None
     message: str | None = None
 
 
@@ -1720,6 +1724,34 @@ class RequestCompleteIn(BaseModel):
     worker_registration_body: str | None = None
     worker_registration_number: str | None = None
     worker_vertical: str | None = None
+
+
+# Accepted vertical hints from API partners -> mapped to the org's template pool.
+_VERTICAL_ALIASES = {
+    "care": "care", "social_care": "care", "cqc": "care",
+    "health": "healthcare", "healthcare": "healthcare", "nhs": "healthcare",
+    "nmc": "healthcare", "hcpc": "healthcare",
+    "education": "teaching", "teaching": "teaching", "school": "teaching",
+    "kcsie": "teaching",
+    "social_work": "social_work", "socialwork": "social_work", "swe": "social_work",
+}
+
+
+async def resolve_template_for_vertical(conn, vertical_hint):
+    """Map a partner-supplied vertical hint (e.g. 'care', 'nhs') to an active
+    template id. Returns None if the hint is unknown or no template matches,
+    so the caller can fall back to the org default."""
+    if not vertical_hint:
+        return None
+    key = _VERTICAL_ALIASES.get(str(vertical_hint).strip().lower())
+    if not key:
+        return None
+    row = await conn.fetchrow(
+        "select id from reference_templates where vertical = $1::vertical_t "
+        "and is_active order by name limit 1",
+        key,
+    )
+    return row["id"] if row else None
 
 
 async def resolve_default_template(conn, org_id):
@@ -1777,7 +1809,9 @@ async def create_request(body: RequestCreateIn, request: Request, actor=Depends(
             """,
             org_id, actor["user_id"], body.worker_name.strip(), worker_email, body.prev_employer_name,
             body.referee_name, referee_email, domain, (not free_mail),
-            (body.template_id or await resolve_default_template(c, org_id)), thash, body.message,
+            (body.template_id
+             or await resolve_template_for_vertical(c, body.vertical)
+             or await resolve_default_template(c, org_id)), thash, body.message,
         )
         await add_event(c, event_type="requested", request_id=req["id"],
                        actor_org_id=org_id, actor_id=actor["user_id"],
