@@ -294,7 +294,6 @@ export default function AdminConsole() {
                   <tr key={p.id} style={{ borderBottom: '1px solid var(--line, #eee)' }}>
                     <td style={{ padding: '8px 10px' }}>{p.name}{!p.active && <span className="kv"> (paused)</span>}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.price_per_ref.toFixed(2)}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.rev_share_pct.toFixed(0)}%</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.this_month.refs}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.this_month.amount.toFixed(2)}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.all_time.refs}</td>
