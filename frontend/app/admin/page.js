@@ -4,6 +4,19 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { api } from '../../lib/api';
 
+function AdminIcon({ name }) {
+  const p = {
+    overview: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
+    partners: <><circle cx="9" cy="8" r="3.2" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M17 8a3 3 0 0 1 0 6" /><path d="M21 20a5 5 0 0 0-4-4.9" /></>,
+    orgs: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 4v16" /></>,
+    reports: <><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h6" /></>,
+  }[name] || null;
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p}</svg>
+  );
+}
+
 export default function AdminConsole() {
   const router = useRouter();
   const [state, setState] = useState('loading'); // loading | signin | denied | ready
@@ -17,6 +30,7 @@ export default function AdminConsole() {
   const [issuedKey, setIssuedKey] = useState(null);
   const [pickOrg, setPickOrg] = useState({});
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [view, setView] = useState('overview');
   const [msg, setMsg] = useState(''); const [err, setErr] = useState(false);
   const [delTarget, setDelTarget] = useState(null); const [delText, setDelText] = useState('');
 
@@ -211,158 +225,188 @@ export default function AdminConsole() {
   const subs = a.subscriptions || {}; const seats = a.seats || {}; const churn = a.churn || {}; const growth = a.growth || {}; const life = a.lifecycle || {};
 
   return (
-    <div className="wrap">
-      <div className="topbar">
-        <div>
-          <div className="brand" style={{ fontSize: 28 }}>Reffolio</div>
-          <div className="muted">Admin console{email ? ` · ${email}` : ''}</div>
+    <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'stretch' }}>
+      <aside style={{ width: 248, flexShrink: 0, borderRight: '1px solid var(--line-soft, #e7e9f2)', padding: '20px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 8px 16px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 19 }}>
+          <img src="/icon.svg" alt="" style={{ width: 26, height: 26, borderRadius: 7 }} /> Reffolio
         </div>
-        <button className="ghost" style={{ marginTop: 0 }} onClick={() => router.push('/dashboard')}>Exit</button>
-      </div>
-
-      <div className="row" style={{ gap: 12, alignItems: 'stretch' }}>
-        {stat('Est. MRR', '\u00a3' + (overview.estimated_mrr_gbp || 0).toLocaleString())}
-        {stat('Est. ARR', '\u00a3' + (overview.estimated_arr_gbp || 0).toLocaleString())}
-        {stat('Churn (snapshot)', pct(churn.rate), `${churn.cancels_30d || 0} cancels / 30d`)}
-        {stat('Seat utilisation', pct(seats.utilisation), `${seats.used || 0} of ${seats.subscribed || 0} seats`)}
-      </div>
-      <div className="row" style={{ gap: 12, alignItems: 'stretch', marginTop: 12 }}>
-        {stat('Active subs', subs.active ?? 0)}
-        {stat('Cancelled', subs.canceled ?? 0)}
-        {stat('Past due', subs.past_due ?? 0)}
-        {stat('Suspended', life.suspended ?? 0)}
-      </div>
-      <div className="row" style={{ gap: 12, alignItems: 'stretch', marginTop: 12 }}>
-        {stat('New orgs 7d', growth.new_7d ?? 0)}
-        {stat('New orgs 30d', growth.new_30d ?? 0)}
-        {stat('New orgs 90d', growth.new_90d ?? 0)}
-        {stat('References', t.references ?? 0, `${t.references_published ?? 0} published`)}
-      </div>
-
-      <div className="card" style={{ marginTop: 18 }}>
-        <h2>Reports</h2>
-        <p className="kv">Download the full per-organisation dataset (plan, status, seats, members, references, activity).</p>
-        <div className="row" style={{ gap: 8 }}>
-          <button onClick={() => downloadReport('csv')}>Download CSV</button>
-          <button className="ghost" onClick={() => downloadReport('pdf')}>Download PDF</button>
+        {[
+          { id: 'overview', icon: 'overview', label: 'Overview' },
+          { id: 'partners', icon: 'partners', label: 'Integration partners' },
+          { id: 'orgs', icon: 'orgs', label: 'Organisations' },
+          { id: 'reports', icon: 'reports', label: 'Reports' },
+        ].map((n) => (
+          <button key={n.id} onClick={() => setView(n.id)} style={{
+            display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left',
+            background: view === n.id ? 'rgba(108,92,231,.10)' : 'transparent',
+            color: view === n.id ? 'var(--violet, #6C5CE7)' : 'var(--text)',
+            border: 'none', borderRadius: 10, padding: '10px 12px', margin: '2px 0', cursor: 'pointer',
+            fontSize: 14, fontWeight: 600, boxShadow: 'none',
+          }}><AdminIcon name={n.icon} /> {n.label}</button>
+        ))}
+        <div style={{ marginTop: 'auto', padding: '12px 8px 4px', borderTop: '1px solid var(--line-soft, #e7e9f2)' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>Reffolio staff</div>
+          <button className="ghost" style={{ marginTop: 0, width: '100%' }} onClick={() => router.push('/dashboard')}>Exit</button>
         </div>
-      </div>
+      </aside>
 
-      <div className="card" style={{ marginTop: 18 }}>
-<h2 style={{ marginTop: 0 }}>Partners {partnersOverview?.partners ? `(${partnersOverview.partners.length})` : ''}</h2>
-
-        <div style={{ background: 'rgba(108,92,231,.06)', border: '1px solid var(--line, #e7e9f2)', borderRadius: 10, padding: '12px 14px', margin: '6px 0 16px' }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>How to onboard a partner</div>
-          <div className="kv" style={{ lineHeight: 1.7 }}>
-            <b>1. Create</b> the partner below (name, price per reference, their revenue share). &nbsp;
-            <b>2. Set up</b> &mdash; enter their email and we create their account, email them a login link, and issue their API key in one step. They click the link, set a password, and land on their dashboard. That&rsquo;s it.
-          </div>
-        </div>
-
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Step 1 &middot; Create a partner</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', margin: '0 0 18px' }}>
-          <div><div className="kv">Name</div><input value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="e.g. uCheck" style={{ minWidth: 150 }} /></div>
-          <div><div className="kv">Contact email</div><input value={npEmail} onChange={(e) => setNpEmail(e.target.value)} placeholder="partner@example.com" /></div>
-          <div><div className="kv">Price / ref</div><input value={npPrice} onChange={(e) => setNpPrice(e.target.value)} placeholder="5.00" style={{ width: 80 }} /></div>
-          <button onClick={createPartner}>Create partner</button>
-        </div>
-
-        {issuedKey && (
-          <div className="card" style={{ background: 'rgba(0,184,166,.06)', border: '1px solid var(--accent, #00B8A6)', margin: '0 0 14px' }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>API key for the partner &mdash; copy it now (shown once)</div>
-            <code style={{ background: '#0c1020', color: '#fff', padding: '8px 12px', borderRadius: 8, wordBreak: 'break-all', display: 'inline-block', fontSize: 13 }}>{issuedKey.key}</code>
-          </div>
-        )}
-
-        {!partnersOverview && <p className="kv">Loading partner data...</p>}
-        {partnersOverview && partnersOverview.partners.length === 0 && <p className="kv">No partners yet. Create one above.</p>}
-        {partnersOverview && partnersOverview.partners.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid var(--line, #e7e9f2)' }}>
-                <th style={{ padding: '8px 10px' }}>Partner</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Price</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Share</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (mo)</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount (mo)</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (all)</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount (all)</th>
-                <th style={{ padding: '8px 10px' }}>Actions</th>
-              </tr></thead>
-              <tbody>
-                {partnersOverview.partners.map((p) => (
-                  <tr key={p.id} style={{ borderBottom: '1px solid var(--line, #eee)' }}>
-                    <td style={{ padding: '8px 10px' }}>{p.name}{!p.active && <span className="kv"> (paused)</span>}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.price_per_ref.toFixed(2)}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.this_month.refs}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.this_month.amount.toFixed(2)}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.all_time.refs}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>&pound;{p.all_time.amount.toFixed(2)}</td>
-                    <td style={{ padding: '8px 10px' }}>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <button style={{ marginTop: 0, padding: '5px 12px', fontSize: 12 }} onClick={() => setupPartner(p.id, p.name)}>Set up partner</button>
-                        <button className="ghost" style={{ marginTop: 0, padding: '5px 10px', fontSize: 12 }} onClick={() => togglePartner(p.id, p.active)}>{p.active ? 'Pause' : 'Activate'}</button>
-                        <button className="ghost" style={{ marginTop: 0, padding: '5px 10px', fontSize: 12, color: '#b42318' }} onClick={() => removePartner(p.id, p.name)}>Remove</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                <tr style={{ borderTop: '2px solid var(--line, #e7e9f2)', fontWeight: 700 }}>
-                  <td style={{ padding: '8px 10px' }}>Totals</td><td></td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.this_month.refs}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.this_month.amount.toFixed(2)}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.all_time.refs}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.all_time.amount.toFixed(2)}</td>
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0 }}>Organisations ({orgs.length})</h2>
-          <label className="kv" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" style={{ width: 'auto' }} checked={includeArchived} onChange={(e) => toggleArchived(e.target.checked)} />
-            show archived
-          </label>
-        </div>
+      <main style={{ flex: 1, minWidth: 0, padding: '28px 32px', maxWidth: 1100 }}>
         {msg && <div className={'msg' + (err ? ' err' : '')}>{msg}</div>}
-        {orgs.map((o) => (
-          <div className="item" key={o.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <div>
-                <div>
-                  <b style={{ color: 'var(--text)' }}>{o.name}</b>{' '}
-                  <span className="badge">{o.plan}</span> <span className="badge">{o.status}</span>
-                  {o.is_suspended && <span className="badge" style={{ marginLeft: 4, background: '#fef0c7', color: '#92600a' }}>suspended</span>}
-                  {o.archived_at && <span className="badge" style={{ marginLeft: 4, background: '#fde8e8', color: '#b42318' }}>archived</span>}
-                </div>
-                <div className="kv" style={{ fontFamily: 'monospace', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span>{o.id}</span>
-                  <button className="ghost" style={{ marginTop: 0, padding: '1px 6px', fontSize: 10 }}
-                    onClick={() => { navigator.clipboard?.writeText(o.id); setMsg('Org ID copied.'); }}>copy</button>
-                </div>
-                <div className="kv">
-                  {(o.org_type || '').replace('_', ' ')} · {o.members} of {o.seats} seats · {o.refs} reference{o.refs === 1 ? '' : 's'} · joined {new Date(o.created_at).toLocaleDateString()}
-                </div>
+
+        {view === 'overview' && (
+          <>
+            <h1 style={{ marginTop: 0 }}>Overview</h1>
+            <div className="row" style={{ gap: 12, alignItems: 'stretch' }}>
+              {stat('Est. MRR', '\u00a3' + (overview.estimated_mrr_gbp || 0).toLocaleString())}
+              {stat('Est. ARR', '\u00a3' + (overview.estimated_arr_gbp || 0).toLocaleString())}
+              {stat('Churn (snapshot)', pct(churn.rate), `${churn.cancels_30d || 0} cancels / 30d`)}
+              {stat('Seat utilisation', pct(seats.utilisation), `${seats.used || 0} of ${seats.subscribed || 0} seats`)}
+            </div>
+            <div className="row" style={{ gap: 12, alignItems: 'stretch', marginTop: 12 }}>
+              {stat('Active subs', subs.active ?? 0)}
+              {stat('Cancelled', subs.canceled ?? 0)}
+              {stat('Past due', subs.past_due ?? 0)}
+              {stat('Suspended', life.suspended ?? 0)}
+            </div>
+            <div className="row" style={{ gap: 12, alignItems: 'stretch', marginTop: 12 }}>
+              {stat('New orgs 7d', growth.new_7d ?? 0)}
+              {stat('New orgs 30d', growth.new_30d ?? 0)}
+              {stat('New orgs 90d', growth.new_90d ?? 0)}
+              {stat('References', t.references ?? 0, `${t.references_published ?? 0} published`)}
+            </div>
+          </>
+        )}
+
+        {view === 'reports' && (
+          <div className="card" style={{ marginTop: 0 }}>
+            <h2 style={{ marginTop: 0 }}>Reports</h2>
+            <p className="kv">Download the full per-organisation dataset (plan, status, seats, members, references, activity).</p>
+            <div className="row" style={{ gap: 8 }}>
+              <button onClick={() => downloadReport('csv')}>Download CSV</button>
+              <button className="ghost" onClick={() => downloadReport('pdf')}>Download PDF</button>
+            </div>
+          </div>
+        )}
+
+        {view === 'partners' && (
+          <div className="card" style={{ marginTop: 0 }}>
+            <h2 style={{ marginTop: 0 }}>Integration partners {partnersOverview?.partners ? `(${partnersOverview.partners.length})` : ''}</h2>
+
+            <div style={{ background: 'rgba(108,92,231,.06)', border: '1px solid var(--line, #e7e9f2)', borderRadius: 10, padding: '12px 14px', margin: '6px 0 16px' }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>How to onboard a partner</div>
+              <div className="kv" style={{ lineHeight: 1.7 }}>
+                <b>1. Create</b> the partner below (name, price per reference). &nbsp;
+                <b>2. Set up</b> &mdash; enter their email and we create their account, email them a login link, and issue their API key in one step. They click the link, set a password, and land on their dashboard. That&rsquo;s it.
               </div>
             </div>
-            <div className="row" style={{ gap: 6, marginTop: 8 }}>
-              {o.is_suspended
-                ? <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/unsuspend`, `${o.name} unsuspended.`)}>Unsuspend</button>
-                : <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/suspend`, `${o.name} suspended.`)}>Suspend</button>}
-              {o.archived_at
-                ? <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/unarchive`, `${o.name} restored.`)}>Unarchive</button>
-                : <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/archive`, `${o.name} archived.`)}>Archive</button>}
-              {o.status === 'active' && <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/cancel-subscription`, `Subscription cancelled for ${o.name}.`)}>Cancel sub</button>}
-              <button className="ghost" style={{ marginTop: 0, color: '#b42318', borderColor: '#f3c2c2' }} onClick={() => { setDelTarget(o); setDelText(''); }}>Delete</button>
+
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Step 1 &middot; Create a partner</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', margin: '0 0 18px' }}>
+              <div><div className="kv">Name</div><input value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="e.g. uCheck" style={{ minWidth: 150 }} /></div>
+              <div><div className="kv">Contact email</div><input value={npEmail} onChange={(e) => setNpEmail(e.target.value)} placeholder="partner@example.com" /></div>
+              <div><div className="kv">Price / ref</div><input value={npPrice} onChange={(e) => setNpPrice(e.target.value)} placeholder="5.00" style={{ width: 80 }} /></div>
+              <button onClick={createPartner}>Create partner</button>
             </div>
+
+            {issuedKey && (
+              <div className="card" style={{ background: 'rgba(0,184,166,.06)', border: '1px solid var(--accent, #00B8A6)', margin: '0 0 14px' }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>API key for the partner &mdash; copy it now (shown once)</div>
+                <code style={{ background: '#0c1020', color: '#fff', padding: '8px 12px', borderRadius: 8, wordBreak: 'break-all', display: 'inline-block', fontSize: 13 }}>{issuedKey.key}</code>
+              </div>
+            )}
+
+            {!partnersOverview && <p className="kv">Loading partner data...</p>}
+            {partnersOverview && partnersOverview.partners.length === 0 && <p className="kv">No partners yet. Create one above.</p>}
+            {partnersOverview && partnersOverview.partners.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid var(--line, #e7e9f2)' }}>
+                    <th style={{ padding: '8px 10px' }}>Partner</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Price</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (mo)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount (mo)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Refs (all)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount (all)</th>
+                    <th style={{ padding: '8px 10px' }}>Actions</th>
+                  </tr></thead>
+                  <tbody>
+                    {partnersOverview.partners.map((p) => (
+                      <tr key={p.id} style={{ borderBottom: '1px solid var(--line, #eee)' }}>
+                        <td style={{ padding: '8px 10px' }}>{p.name}{!p.active && <span className="kv"> (paused)</span>}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.price_per_ref.toFixed(2)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.this_month.refs}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{p.this_month.amount.toFixed(2)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.all_time.refs}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>&pound;{p.all_time.amount.toFixed(2)}</td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <button style={{ marginTop: 0, padding: '5px 12px', fontSize: 12 }} onClick={() => setupPartner(p.id, p.name)}>Set up partner</button>
+                            <button className="ghost" style={{ marginTop: 0, padding: '5px 10px', fontSize: 12 }} onClick={() => togglePartner(p.id, p.active)}>{p.active ? 'Pause' : 'Activate'}</button>
+                            <button className="ghost" style={{ marginTop: 0, padding: '5px 10px', fontSize: 12, color: '#b42318' }} onClick={() => removePartner(p.id, p.name)}>Remove</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: '2px solid var(--line, #e7e9f2)', fontWeight: 700 }}>
+                      <td style={{ padding: '8px 10px' }}>Totals</td><td></td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.this_month.refs}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.this_month.amount.toFixed(2)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>{partnersOverview.totals.all_time.refs}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>&pound;{partnersOverview.totals.all_time.amount.toFixed(2)}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+        )}
+
+        {view === 'orgs' && (
+          <div className="card" style={{ marginTop: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0 }}>Organisations ({orgs.length})</h2>
+              <label className="kv" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" style={{ width: 'auto' }} checked={includeArchived} onChange={(e) => toggleArchived(e.target.checked)} />
+                show archived
+              </label>
+            </div>
+            {orgs.map((o) => (
+              <div className="item" key={o.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <div>
+                    <div>
+                      <b style={{ color: 'var(--text)' }}>{o.name}</b>{' '}
+                      <span className="badge">{o.plan}</span> <span className="badge">{o.status}</span>
+                      {o.is_suspended && <span className="badge" style={{ marginLeft: 4, background: '#fef0c7', color: '#92600a' }}>suspended</span>}
+                      {o.archived_at && <span className="badge" style={{ marginLeft: 4, background: '#fde8e8', color: '#b42318' }}>archived</span>}
+                    </div>
+                    <div className="kv" style={{ fontFamily: 'monospace', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <span>{o.id}</span>
+                      <button className="ghost" style={{ marginTop: 0, padding: '1px 6px', fontSize: 10 }}
+                        onClick={() => { navigator.clipboard?.writeText(o.id); setMsg('Org ID copied.'); }}>copy</button>
+                    </div>
+                    <div className="kv">
+                      {(o.org_type || '').replace('_', ' ')} &middot; {o.members} of {o.seats} seats &middot; {o.refs} reference{o.refs === 1 ? '' : 's'} &middot; joined {new Date(o.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                  {o.is_suspended
+                    ? <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/unsuspend`, `${o.name} unsuspended.`)}>Unsuspend</button>
+                    : <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/suspend`, `${o.name} suspended.`)}>Suspend</button>}
+                  {o.archived_at
+                    ? <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/unarchive`, `${o.name} restored.`)}>Unarchive</button>
+                    : <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/archive`, `${o.name} archived.`)}>Archive</button>}
+                  {o.status === 'active' && <button className="ghost" style={{ marginTop: 0 }} onClick={() => act(`/admin/orgs/${o.id}/cancel-subscription`, `Subscription cancelled for ${o.name}.`)}>Cancel sub</button>}
+                  <button className="ghost" style={{ marginTop: 0, color: '#b42318', borderColor: '#f3c2c2' }} onClick={() => { setDelTarget(o); setDelText(''); }}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
 
       {delTarget && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(11,14,26,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 50 }} onClick={() => setDelTarget(null)}>
