@@ -56,7 +56,7 @@ export default function PartnerDashboard() {
         <span className="kv">Partner dashboard</span>
       </div>
       <p className="kv" style={{ marginTop: 4 }}>
-        £{p.price_per_ref.toFixed(2)} per reference · your share {p.rev_share_pct.toFixed(0)}%
+        £{p.price_per_ref.toFixed(2)} per reference
         {!p.active && ' · (inactive)'}
       </p>
 
