@@ -247,7 +247,7 @@ export default function AdminConsole() {
         <div style={{ marginTop: 'auto', padding: '12px 8px 4px', borderTop: '1px solid var(--line-soft, #e7e9f2)' }}>
           <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>Reffolio staff</div>
-          <button className="ghost" style={{ marginTop: 0, width: '100%' }} onClick={() => router.push('/dashboard')}>Exit</button>
+          <button className="ghost" style={{ marginTop: 0, width: '100%' }} onClick={async () => { await supabase.auth.signOut(); router.push('/'); }}>Sign out</button>
         </div>
       </aside>
 
